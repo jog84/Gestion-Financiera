@@ -13,6 +13,7 @@ import {
   getRecurringTransactions,
 } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID  = "default";
 const MONTH_NAMES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -179,11 +180,11 @@ export function Dashboard() {
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
-  const { data: summary,        isLoading: ls } = useQuery({ queryKey: ["dashboard",           PROFILE_ID, year, month], queryFn: () => getDashboardSummary(PROFILE_ID, year, month) });
-  const { data: monthly = [],    isLoading: lm } = useQuery({ queryKey: ["monthly_summary",    PROFILE_ID, 6],           queryFn: () => getMonthlySummary(PROFILE_ID, 6) });
-  const { data: breakdown = [],  isLoading: lb } = useQuery({ queryKey: ["expense_breakdown",  PROFILE_ID, year, month], queryFn: () => getExpenseBreakdown(PROFILE_ID, year, month) });
-  const { data: recent = [],     isLoading: lr } = useQuery({ queryKey: ["recent_transactions", PROFILE_ID, 8],          queryFn: () => getRecentTransactions(PROFILE_ID, 8) });
-  const { data: recurring = [] }                 = useQuery({ queryKey: ["recurring",           PROFILE_ID],             queryFn: () => getRecurringTransactions(PROFILE_ID), staleTime: 60_000 });
+  const { data: summary,        isLoading: ls } = useQuery({ queryKey: QK.dashboard(year, month),    queryFn: () => getDashboardSummary(PROFILE_ID, year, month) });
+  const { data: monthly = [],    isLoading: lm } = useQuery({ queryKey: QK.monthlySummary(6),          queryFn: () => getMonthlySummary(PROFILE_ID, 6) });
+  const { data: breakdown = [],  isLoading: lb } = useQuery({ queryKey: QK.expenseBreakdown(year, month), queryFn: () => getExpenseBreakdown(PROFILE_ID, year, month) });
+  const { data: recent = [],     isLoading: lr } = useQuery({ queryKey: QK.recentTx(8),               queryFn: () => getRecentTransactions(PROFILE_ID, 8) });
+  const { data: recurring = [] }                 = useQuery({ queryKey: QK.recurring(),                queryFn: () => getRecurringTransactions(PROFILE_ID), staleTime: 60_000 });
 
   // Compromisos fijos mensuales activos (para sub-label del balance)
   const monthlyFixed = recurring

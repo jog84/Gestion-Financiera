@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportAssetsTemplate, importAssets } from "@/lib/excel";
 import { toast } from "sonner";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID = "default";
 
@@ -55,12 +56,12 @@ export function Assets() {
   const qc = useQueryClient();
 
   const { data: assets = [], isLoading } = useQuery({
-    queryKey: ["assets", PROFILE_ID],
+    queryKey: QK.assets(),
     queryFn: () => getAssets(PROFILE_ID),
   });
 
   const { data: netWorthHistory = [] } = useQuery({
-    queryKey: ["net_worth_history", PROFILE_ID],
+    queryKey: QK.netWorthHistory(90),
     queryFn: () => getNetWorthHistory(PROFILE_ID, 90),
   });
 
@@ -90,7 +91,7 @@ export function Assets() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: QK.assets() });
       setModalOpen(false);
       setForm({ name: "", category: "", value: "", snapshot_date: new Date().toISOString().split("T")[0], notes: "" });
       toast.success("Activo registrado correctamente");
@@ -101,7 +102,7 @@ export function Assets() {
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateAsset>[1] }) =>
       updateAsset(id, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: QK.assets() });
       toast.success("Activo actualizado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -110,7 +111,7 @@ export function Assets() {
   const deleteMutation = useMutation({
     mutationFn: deleteAsset,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: QK.assets() });
       setDeleteId(null);
       toast.success("Activo eliminado");
     },
@@ -119,7 +120,7 @@ export function Assets() {
   const snapshotMutation = useMutation({
     mutationFn: () => saveNetWorthSnapshot(PROFILE_ID, totalPatrimonio),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["net_worth_history"] });
+      qc.invalidateQueries({ queryKey: QK.netWorthHistory(90) });
       toast.success("Snapshot de patrimonio guardado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -138,7 +139,7 @@ export function Assets() {
         await createAsset({ profile_id: PROFILE_ID, name: r.name, category: r.category || undefined, value: r.value, snapshot_date: r.snapshot_date, notes: r.notes || undefined });
         ok++;
       }
-      qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: QK.assets() });
       toast.success(`${ok} activo(s) importado(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");

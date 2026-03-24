@@ -15,6 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID = "default";
 
@@ -65,17 +66,17 @@ export function Recurring() {
   const qc = useQueryClient();
 
   const { data: recurring = [], isLoading } = useQuery({
-    queryKey: ["recurring", PROFILE_ID],
+    queryKey: QK.recurring(),
     queryFn: () => getRecurringTransactions(PROFILE_ID),
   });
 
   const { data: sources = [] } = useQuery({
-    queryKey: ["income_sources", PROFILE_ID],
+    queryKey: QK.incomeSources(),
     queryFn: () => getIncomeSources(PROFILE_ID),
   });
 
   const { data: categories = [] } = useQuery({
-    queryKey: ["expense_categories", PROFILE_ID],
+    queryKey: QK.expenseCategories(),
     queryFn: () => getExpenseCategories(PROFILE_ID),
   });
 
@@ -125,7 +126,7 @@ export function Recurring() {
         next_due_date: form.next_due_date,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["recurring"] });
+      qc.invalidateQueries({ queryKey: QK.recurring() });
       setModalOpen(false);
       setForm(emptyForm);
       toast.success("Transacción recurrente creada");
@@ -150,7 +151,7 @@ export function Recurring() {
         next_due_date: form.next_due_date,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["recurring"] });
+      qc.invalidateQueries({ queryKey: QK.recurring() });
       setModalOpen(false);
       setEditItem(null);
       toast.success("Transacción recurrente actualizada");
@@ -161,7 +162,7 @@ export function Recurring() {
   const deleteMutation = useMutation({
     mutationFn: deleteRecurringTransaction,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["recurring"] });
+      qc.invalidateQueries({ queryKey: QK.recurring() });
       setDeleteId(null);
       toast.success("Transacción recurrente eliminada");
     },
@@ -169,13 +170,13 @@ export function Recurring() {
 
   const toggleMutation = useMutation({
     mutationFn: toggleRecurringActive,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["recurring"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.recurring() }),
   });
 
   const applyMutation = useMutation({
     mutationFn: () => applyDueRecurring(PROFILE_ID, new Date().toISOString().split("T")[0]),
     onSuccess: (applied) => {
-      qc.invalidateQueries({ queryKey: ["recurring"] });
+      qc.invalidateQueries({ queryKey: QK.recurring() });
       qc.invalidateQueries({ queryKey: ["incomes"] });
       qc.invalidateQueries({ queryKey: ["expenses"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });

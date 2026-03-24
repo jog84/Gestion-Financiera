@@ -11,6 +11,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportGoalsTemplate, importGoals } from "@/lib/excel";
 import { toast } from "sonner";
 import type { GoalEntry } from "@/types";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID = "default";
 
@@ -53,14 +54,14 @@ function GoalMilestones({ goal, pct }: { goal: GoalEntry; pct: number }) {
   const [newPct, setNewPct] = useState("");
 
   const { data: milestones = [] } = useQuery({
-    queryKey: ["milestones", goal.id],
+    queryKey: QK.milestones(goal.id),
     queryFn: () => getMilestones(goal.id),
   });
 
   const addMutation = useMutation({
     mutationFn: () => createMilestone(goal.id, PROFILE_ID, newLabel.trim(), parseFloat(newPct)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["milestones", goal.id] });
+      qc.invalidateQueries({ queryKey: QK.milestones(goal.id) });
       setAdding(false);
       setNewLabel("");
       setNewPct("");
@@ -71,7 +72,7 @@ function GoalMilestones({ goal, pct }: { goal: GoalEntry; pct: number }) {
 
   const deleteMilestoneM = useMutation({
     mutationFn: deleteMilestone,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["milestones", goal.id] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.milestones(goal.id) }),
   });
 
   if (milestones.length === 0 && !adding) {
@@ -160,13 +161,13 @@ export function Goals() {
   const now = new Date();
 
   const { data: goals = [], isLoading } = useQuery({
-    queryKey: ["goals", PROFILE_ID],
+    queryKey: QK.goals(),
     queryFn: () => getGoals(PROFILE_ID),
   });
 
   // Ahorro mensual promedio de los últimos 6 meses para proyectar fechas de cumplimiento
   const { data: monthlySummary = [] } = useQuery({
-    queryKey: ["monthly_summary", PROFILE_ID, 6],
+    queryKey: QK.monthlySummary(6),
     queryFn: () => getMonthlySummary(PROFILE_ID, 6),
   });
 
@@ -185,7 +186,7 @@ export function Goals() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["goals"] });
+      qc.invalidateQueries({ queryKey: QK.goals() });
       setModalOpen(false);
       setForm({ name: "", target_amount: "", current_amount: "0", target_date: "", notes: "" });
       toast.success("Objetivo registrado correctamente");
@@ -200,8 +201,8 @@ export function Goals() {
       return newMilestones;
     },
     onSuccess: (newMilestones, { id }) => {
-      qc.invalidateQueries({ queryKey: ["goals"] });
-      qc.invalidateQueries({ queryKey: ["milestones", id] });
+      qc.invalidateQueries({ queryKey: QK.goals() });
+      qc.invalidateQueries({ queryKey: QK.milestones(id) });
       setEditingId(null);
       if (newMilestones.length > 0) {
         toast.success(`¡Hito alcanzado: ${newMilestones.map((m) => m.label).join(", ")}!`);
@@ -214,7 +215,7 @@ export function Goals() {
   const deleteMutation = useMutation({
     mutationFn: deleteGoal,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["goals"] });
+      qc.invalidateQueries({ queryKey: QK.goals() });
       setDeleteId(null);
       toast.success("Objetivo eliminado");
     },
@@ -234,7 +235,7 @@ export function Goals() {
         await createGoal({ profile_id: PROFILE_ID, name: r.name, target_amount: r.target_amount, current_amount: r.current_amount, target_date: r.target_date || undefined, notes: r.notes || undefined });
         ok++;
       }
-      qc.invalidateQueries({ queryKey: ["goals"] });
+      qc.invalidateQueries({ queryKey: QK.goals() });
       toast.success(`${ok} objetivo(s) importado(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");

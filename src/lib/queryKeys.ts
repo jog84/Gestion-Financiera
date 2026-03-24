@@ -19,7 +19,7 @@ export const QK = {
   expenses:      (year: number, month: number) => ["expenses",       P, year, month] as const,
   budgets:       (year: number, month: number) => ["budgets",        P, year, month] as const,
   installments:  ()                            => ["installments",   P]               as const,
-  installmentCf: (months: number)             => ["installment_cf",  P, months]      as const,
+  installmentCf: () => ["installment_cashflow", P] as const,
   recurring:     ()                            => ["recurring",      P]               as const,
 
   // ── Catálogos ─────────────────────────────────────────────────────────────
@@ -48,6 +48,10 @@ export const QK = {
   // ── Settings ──────────────────────────────────────────────────────────────
   themes:  () => ["themes",  P] as const,
   profile: () => ["profile", P] as const,
+
+  profileSettings: () => ["profile_settings"] as const,
+  dbLocation:      () => ["db_location"]      as const,
+  defaultProfile:  () => ["default-profile"]  as const,
 } as const;
 
 // ── Árbol de invalidación por entidad mutada ──────────────────────────────────

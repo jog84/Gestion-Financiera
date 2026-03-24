@@ -13,6 +13,7 @@ import {
   getThemes, createTheme, activateTheme, deactivateAllThemes, deleteTheme,
 } from "@/lib/api";
 import { toast } from "sonner";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID = "default";
 
@@ -92,27 +93,27 @@ export function Settings() {
     : "";
 
   const { data: profile } = useQuery({
-    queryKey: ["profile_settings"],
+    queryKey: QK.profileSettings(),
     queryFn: getDefaultProfile,
   });
 
   const { data: currentDbPath, refetch: refetchDbPath } = useQuery({
-    queryKey: ["db_location"],
+    queryKey: QK.dbLocation(),
     queryFn: getDbLocation,
   });
 
   const { data: categories = [] } = useQuery({
-    queryKey: ["expense_categories", PROFILE_ID],
+    queryKey: QK.expenseCategories(),
     queryFn: () => getExpenseCategories(PROFILE_ID),
   });
 
   const { data: sources = [] } = useQuery({
-    queryKey: ["income_sources", PROFILE_ID],
+    queryKey: QK.incomeSources(),
     queryFn: () => getIncomeSources(PROFILE_ID),
   });
 
   const { data: themes = [] } = useQuery({
-    queryKey: ["themes", PROFILE_ID],
+    queryKey: QK.themes(),
     queryFn: () => getThemes(PROFILE_ID),
   });
 
@@ -130,8 +131,8 @@ export function Settings() {
   const saveMutation = useMutation({
     mutationFn: () => updateProfileSettings(form.name, form.currency_code, form.locale),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["profile_settings"] });
-      qc.invalidateQueries({ queryKey: ["default-profile"] });
+      qc.invalidateQueries({ queryKey: QK.profileSettings() });
+      qc.invalidateQueries({ queryKey: QK.defaultProfile() });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
       toast.success("Configuración guardada");
@@ -175,7 +176,7 @@ export function Settings() {
   const addCatMutation = useMutation({
     mutationFn: () => createExpenseCategory(PROFILE_ID, newCatName.trim(), newCatColor),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["expense_categories"] });
+      qc.invalidateQueries({ queryKey: QK.expenseCategories() });
       setNewCatName("");
       toast.success("Categoría creada");
     },
@@ -186,7 +187,7 @@ export function Settings() {
     mutationFn: ({ id, name, color }: { id: string; name: string; color: string }) =>
       updateExpenseCategory(id, name, color),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["expense_categories"] });
+      qc.invalidateQueries({ queryKey: QK.expenseCategories() });
       setEditingCat(null);
       toast.success("Categoría actualizada");
     },
@@ -196,7 +197,7 @@ export function Settings() {
   const deleteCatMutation = useMutation({
     mutationFn: deleteExpenseCategory,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["expense_categories"] });
+      qc.invalidateQueries({ queryKey: QK.expenseCategories() });
       toast.success("Categoría eliminada");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -206,7 +207,7 @@ export function Settings() {
   const addSrcMutation = useMutation({
     mutationFn: () => createIncomeSource(PROFILE_ID, newSrcName.trim(), newSrcColor),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["income_sources"] });
+      qc.invalidateQueries({ queryKey: QK.incomeSources() });
       setNewSrcName("");
       toast.success("Fuente creada");
     },
@@ -217,7 +218,7 @@ export function Settings() {
     mutationFn: ({ id, name, color }: { id: string; name: string; color: string }) =>
       updateIncomeSource(id, name, color),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["income_sources"] });
+      qc.invalidateQueries({ queryKey: QK.incomeSources() });
       setEditingSrc(null);
       toast.success("Fuente actualizada");
     },
@@ -227,7 +228,7 @@ export function Settings() {
   const deleteSrcMutation = useMutation({
     mutationFn: deleteIncomeSource,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["income_sources"] });
+      qc.invalidateQueries({ queryKey: QK.incomeSources() });
       toast.success("Fuente eliminada");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -238,7 +239,7 @@ export function Settings() {
     mutationFn: ({ name, tokens }: { name: string; tokens: string }) =>
       createTheme(PROFILE_ID, name, tokens),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["themes"] });
+      qc.invalidateQueries({ queryKey: QK.themes() });
       toast.success("Tema creado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -247,7 +248,7 @@ export function Settings() {
   const activateThemeMutation = useMutation({
     mutationFn: (themeId: string) => activateTheme(PROFILE_ID, themeId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["themes"] });
+      qc.invalidateQueries({ queryKey: QK.themes() });
       toast.success("Tema activado — recargá la app para ver el cambio completo");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -256,7 +257,7 @@ export function Settings() {
   const deactivateMutation = useMutation({
     mutationFn: () => deactivateAllThemes(PROFILE_ID),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["themes"] });
+      qc.invalidateQueries({ queryKey: QK.themes() });
       toast.success("Tema desactivado — usando tema por defecto");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -264,7 +265,7 @@ export function Settings() {
 
   const deleteThemeMutation = useMutation({
     mutationFn: deleteTheme,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["themes"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.themes() }),
     onError: (e: unknown) => toast.error(String(e)),
   });
 

@@ -16,6 +16,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportExpensesTemplate, importExpenses } from "@/lib/excel";
 import { toast } from "sonner";
 import { useLocation, useNavigate } from "react-router-dom";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID = "default";
 
@@ -77,17 +78,17 @@ export function Expenses() {
   useEffect(() => { setPage(0); }, [year, month, filterCategoryId]);
 
   const { data: expenses = [], isLoading } = useQuery({
-    queryKey: ["expenses", PROFILE_ID, year, month],
+    queryKey: QK.expenses(year, month),
     queryFn: () => getExpenses(PROFILE_ID, year, month),
   });
 
   const { data: categories = [] } = useQuery({
-    queryKey: ["expense_categories", PROFILE_ID],
+    queryKey: QK.expenseCategories(),
     queryFn: () => getExpenseCategories(PROFILE_ID),
   });
 
   const { data: budgets = [] } = useQuery({
-    queryKey: ["budgets", PROFILE_ID, year, month],
+    queryKey: QK.budgets(year, month),
     queryFn: () => getBudgets(PROFILE_ID, year, month),
   });
 
@@ -120,8 +121,8 @@ export function Expenses() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["expenses"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: QK.expenses(year, month) });
+      qc.invalidateQueries({ queryKey: QK.dashboard(year, month) });
       setModalOpen(false);
       setForm({ amount: "", transaction_date: new Date().toISOString().split("T")[0], category_id: "", description: "", vendor: "", payment_method: "", notes: "" });
       toast.success("Gasto registrado correctamente");
@@ -132,8 +133,8 @@ export function Expenses() {
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateExpense>[1] }) =>
       updateExpense(id, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["expenses"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: QK.expenses(year, month) });
+      qc.invalidateQueries({ queryKey: QK.dashboard(year, month) });
       toast.success("Gasto actualizado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -142,8 +143,8 @@ export function Expenses() {
   const deleteMutation = useMutation({
     mutationFn: deleteExpense,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["expenses"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: QK.expenses(year, month) });
+      qc.invalidateQueries({ queryKey: QK.dashboard(year, month) });
       setDeleteId(null);
       toast.success("Gasto eliminado");
     },
@@ -164,8 +165,8 @@ export function Expenses() {
         await createExpense({ profile_id: PROFILE_ID, amount: r.amount, transaction_date: r.transaction_date, description: r.description || undefined, vendor: r.vendor || undefined, payment_method: r.payment_method || undefined, notes: r.notes || undefined });
         ok++;
       }
-      qc.invalidateQueries({ queryKey: ["expenses"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: QK.expenses(year, month) });
+      qc.invalidateQueries({ queryKey: QK.dashboard(year, month) });
       toast.success(`${ok} gasto(s) importado(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");

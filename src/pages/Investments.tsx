@@ -31,6 +31,7 @@ import { PortfolioChart } from "@/components/investments/PortfolioChart";
 import { AllocationCharts } from "@/components/investments/AllocationCharts";
 import { InsightsPanel } from "@/components/investments/InsightsPanel";
 import { RebalanceModal } from "@/components/investments/RebalanceModal";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID = "default";
 
@@ -261,19 +262,19 @@ export function Investments() {
   const qc = useQueryClient();
 
   const { data: investments = [], isLoading } = useQuery({
-    queryKey: ["investments", PROFILE_ID],
+    queryKey: QK.investments(),
     queryFn: () => getInvestments(PROFILE_ID),
   });
 
   const { data: snapshots = [] } = useQuery({
-    queryKey: ["portfolio-snapshots", PROFILE_ID],
+    queryKey: QK.portfolioSnapshots(),
     queryFn: () => getPortfolioSnapshots(PROFILE_ID),
   });
 
   useEffect(() => { fetchCcl().then(setCurrentCcl).catch(() => {}); }, []);
 
   const { data: dashSummary } = useQuery({
-    queryKey: ["dashboard", PROFILE_ID, new Date().getFullYear(), new Date().getMonth() + 1],
+    queryKey: QK.dashboard(new Date().getFullYear(), new Date().getMonth() + 1),
     queryFn: () => getDashboardSummary(PROFILE_ID, new Date().getFullYear(), new Date().getMonth() + 1),
     staleTime: 60_000,
   });
@@ -441,7 +442,7 @@ export function Investments() {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["investments"] });
+      qc.invalidateQueries({ queryKey: QK.investments() });
       setModalOpen(false); setForm(emptyForm);
       toast.success("Inversión registrada");
     },
@@ -451,7 +452,7 @@ export function Investments() {
   const deleteMutation = useMutation({
     mutationFn: deleteInvestment,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["investments"] });
+      qc.invalidateQueries({ queryKey: QK.investments() });
       setDeleteId(null); toast.success("Inversión eliminada");
     },
   });
@@ -467,7 +468,7 @@ export function Investments() {
     const newCurrentValue = ccl > 0 ? (newPrice * qty) / ccl : inv.current_value ?? 0;
     try {
       await updateInvestmentValue(inv.id, newCurrentValue, newPrice);
-      qc.invalidateQueries({ queryKey: ["investments"] });
+      qc.invalidateQueries({ queryKey: QK.investments() });
       toast.success("Precio actualizado");
     } catch (e) { toast.error(String(e)); }
     setEditingPrice(null);
@@ -484,7 +485,7 @@ export function Investments() {
       const updates = prices.map(pr => ({ ticker: pr.ticker, price_ars: pr.price_ars }));
       const updated = await updatePricesByTicker(PROFILE_ID, updates, ccl ?? undefined);
       if (ccl) setCurrentCcl(ccl);
-      qc.invalidateQueries({ queryKey: ["investments"] });
+      qc.invalidateQueries({ queryKey: QK.investments() });
       toast.success(`${updated} posición(es) actualizadas · CCL: $${ccl ? fNum(ccl, 0) : "—"}`);
 
       // Save portfolio snapshot after price refresh
@@ -493,7 +494,7 @@ export function Investments() {
         const recalcUsd = investments.reduce((s, inv) => s + calcRow(inv, ccl ?? currentCcl).actualUsd, 0);
         const recalcInvArs = investments.reduce((s, inv) => s + calcRow(inv, ccl ?? currentCcl).invertidoArs, 0);
         await savePortfolioSnapshot(PROFILE_ID, recalcArs, recalcUsd, recalcInvArs, ccl ?? currentCcl ?? 0);
-        qc.invalidateQueries({ queryKey: ["portfolio-snapshots"] });
+        qc.invalidateQueries({ queryKey: QK.portfolioSnapshots() });
       } catch { /* snapshot is non-critical */ }
     } catch (e) { toast.error(String(e)); }
     finally { setRefreshing(false); }
@@ -516,7 +517,7 @@ export function Investments() {
           instrument_type: "cedear",
         });
       }
-      qc.invalidateQueries({ queryKey: ["investments"] });
+      qc.invalidateQueries({ queryKey: QK.investments() });
       toast.success(`${rows.length} inversión(es) importada(s)`);
     } catch { toast.error("Error al importar. Verificá el formato."); }
     e.target.value = "";

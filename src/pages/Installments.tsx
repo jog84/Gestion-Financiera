@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportInstallmentsTemplate, importInstallments } from "@/lib/excel";
 import { toast } from "sonner";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID = "default";
 
@@ -52,12 +53,12 @@ export function Installments() {
   const qc = useQueryClient();
 
   const { data: installments = [], isLoading } = useQuery({
-    queryKey: ["installments", PROFILE_ID],
+    queryKey: QK.installments(),
     queryFn: () => getInstallments(PROFILE_ID),
   });
 
   const { data: cashflow = [] } = useQuery({
-    queryKey: ["installment_cashflow", PROFILE_ID],
+    queryKey: QK.installmentCf(),
     queryFn: () => getInstallmentCashflow(PROFILE_ID, 12),
   });
 
@@ -81,7 +82,7 @@ export function Installments() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["installments"] });
+      qc.invalidateQueries({ queryKey: QK.installments() });
       setModalOpen(false);
       setForm({ description: "", total_amount: "", installment_count: "", start_date: new Date().toISOString().split("T")[0], notes: "" });
       toast.success("Cuota registrada correctamente");
@@ -91,7 +92,7 @@ export function Installments() {
   const deleteMutation = useMutation({
     mutationFn: deleteInstallment,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["installments"] });
+      qc.invalidateQueries({ queryKey: QK.installments() });
       setDeleteId(null);
       toast.success("Cuota eliminada");
     },
@@ -110,7 +111,7 @@ export function Installments() {
         await createInstallment({ profile_id: PROFILE_ID, description: r.description, total_amount: r.total_amount, installment_count: r.installment_count, start_date: r.start_date, notes: r.notes || undefined });
         ok++;
       }
-      qc.invalidateQueries({ queryKey: ["installments"] });
+      qc.invalidateQueries({ queryKey: QK.installments() });
       toast.success(`${ok} cuota(s) importada(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");

@@ -16,6 +16,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportIncomesTemplate, importIncomes } from "@/lib/excel";
 import { toast } from "sonner";
 import { useLocation, useNavigate } from "react-router-dom";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID = "default";
 
@@ -61,12 +62,12 @@ export function Incomes() {
   useEffect(() => { setPage(0); }, [year, month]);
 
   const { data: incomes = [], isLoading } = useQuery({
-    queryKey: ["incomes", PROFILE_ID, year, month],
+    queryKey: QK.incomes(year, month),
     queryFn: () => getIncomes(PROFILE_ID, year, month),
   });
 
   const { data: sources = [] } = useQuery({
-    queryKey: ["income_sources", PROFILE_ID],
+    queryKey: QK.incomeSources(),
     queryFn: () => getIncomeSources(PROFILE_ID),
   });
 
@@ -84,8 +85,8 @@ export function Incomes() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["incomes"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: QK.incomes(year, month) });
+      qc.invalidateQueries({ queryKey: QK.dashboard(year, month) });
       setModalOpen(false);
       setForm({ amount: "", transaction_date: new Date().toISOString().split("T")[0], source_id: "", description: "", notes: "" });
       toast.success("Ingreso registrado correctamente");
@@ -96,8 +97,8 @@ export function Incomes() {
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateIncome>[1] }) =>
       updateIncome(id, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["incomes"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: QK.incomes(year, month) });
+      qc.invalidateQueries({ queryKey: QK.dashboard(year, month) });
       toast.success("Ingreso actualizado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -106,8 +107,8 @@ export function Incomes() {
   const deleteMutation = useMutation({
     mutationFn: deleteIncome,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["incomes"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: QK.incomes(year, month) });
+      qc.invalidateQueries({ queryKey: QK.dashboard(year, month) });
       setDeleteId(null);
       toast.success("Ingreso eliminado");
     },
@@ -127,8 +128,8 @@ export function Incomes() {
         await createIncome({ profile_id: PROFILE_ID, amount: r.amount, transaction_date: r.transaction_date, description: r.description || undefined, notes: r.notes || undefined });
         ok++;
       }
-      qc.invalidateQueries({ queryKey: ["incomes"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: QK.incomes(year, month) });
+      qc.invalidateQueries({ queryKey: QK.dashboard(year, month) });
       toast.success(`${ok} ingreso(s) importado(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");

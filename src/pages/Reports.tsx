@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Printer } from "lucide-react";
 import { getAnnualReport, getExpenseBreakdown, getMonthlySummary, getYoyComparison } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { QK } from "@/lib/queryKeys";
 
 const PROFILE_ID = "default";
 const CHART_COLORS = ["#2563eb", "#10b981", "#0ea5e9", "#6366f1", "#8b5cf6", "#f59e0b", "#ec4899", "#14b8a6"];
@@ -70,12 +71,12 @@ export function Reports() {
   const [yoyYearB, setYoyYearB] = useState(now.getFullYear() - 1);
 
   const { data: annual } = useQuery({
-    queryKey: ["annual_report", PROFILE_ID, year],
+    queryKey: QK.annualReport(year),
     queryFn: () => getAnnualReport(PROFILE_ID, year),
   });
 
   const { data: expenseBreakdown = [] } = useQuery({
-    queryKey: ["expense_breakdown", PROFILE_ID, year, month],
+    queryKey: QK.expenseBreakdown(year, month),
     queryFn: () => getExpenseBreakdown(PROFILE_ID, year, month),
     enabled: tab === "expenses",
   });
@@ -83,13 +84,13 @@ export function Reports() {
   // NOTA: queryKey usa el mismo prefijo que Dashboard ("monthly_summary")
   // para que se invalide correctamente cuando se agregan ingresos/gastos
   const { data: incomeSummary = [] } = useQuery({
-    queryKey: ["monthly_summary", PROFILE_ID, 12],
+    queryKey: QK.monthlySummary(12),
     queryFn: () => getMonthlySummary(PROFILE_ID, 12),
     enabled: tab === "incomes" || tab === "evolution",
   });
 
   const { data: yoy } = useQuery({
-    queryKey: ["yoy", PROFILE_ID, yoyYearA, yoyYearB],
+    queryKey: QK.yoy(yoyYearA, yoyYearB),
     queryFn: () => getYoyComparison(PROFILE_ID, yoyYearA, yoyYearB),
     enabled: tab === "yoy",
   });

@@ -1,0 +1,147 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+/* ── Design tokens ── */
+:root {
+  --bg:           #020617;
+  --surface:      #0f172a;
+  --surface-2:    #1e293b;
+  --surface-3:    #334155;
+  --border:       #1e293b;
+  --border-light: #334155;
+
+  --primary:      #2563eb;
+  --primary-dim:  rgba(37, 99, 235, 0.15);
+  --primary-glow: rgba(37, 99, 235, 0.35);
+
+  --success:      #10b981;
+  --success-dim:  rgba(16, 185, 129, 0.12);
+  --danger:       #ef4444;
+  --danger-dim:   rgba(239, 68, 68, 0.12);
+  --warning:      #f59e0b;
+  --warning-dim:  rgba(245, 158, 11, 0.12);
+  --cyan:         #06b6d4;
+
+  --text:         #f8fafc;
+  --text-2:       #94a3b8;
+  --text-3:       #64748b;
+
+  --radius-sm:    6px;
+  --radius:       10px;
+  --radius-lg:    14px;
+
+  --font-ui:      'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  --shadow-sm:    0 1px 3px rgba(0,0,0,0.4);
+  --shadow:       0 4px 16px rgba(0,0,0,0.6);
+  --shadow-lg:    0 8px 32px rgba(0,0,0,0.7);
+}
+
+[data-theme="light"] {
+  --bg:           #f8fafc;
+  --surface:      #ffffff;
+  --surface-2:    #f1f5f9;
+  --surface-3:    #e2e8f0;
+  --border:       #e2e8f0;
+  --border-light: #cbd5e1;
+  --primary:      #2563eb;
+  --primary-dim:  rgba(37, 99, 235, 0.1);
+  --primary-glow: rgba(37, 99, 235, 0.2);
+  --accent:       #0284c7;
+  --text:         #020617;
+  --text-2:       #1e293b;
+  --text-3:       #475569;
+  --shadow-sm:    0 1px 2px rgba(0,0,0,0.08);
+  --shadow:       0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg:    0 12px 24px rgba(0,0,0,0.12);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 14px; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.25s, color 0.25s;
+}
+
+/* Grain overlay removed */
+
+/* Mono for all numbers */
+.mono, [data-mono], .font-mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum";
+}
+
+/* Page transition & Animations */
+.page-enter { animation: pageIn 0.3s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-fade-in-up { animation: pageIn 0.4s cubic-bezier(0.16,1,0.3,1) both; }
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes logo-glow {
+  from { filter: drop-shadow(0 0 4px var(--primary-glow)); }
+  to   { filter: drop-shadow(0 0 12px var(--primary-glow)); }
+}
+
+.glass {
+  background: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(12px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+[data-theme="light"] .glass {
+  background: rgba(248, 250, 252, 0.85) !important;
+  backdrop-filter: blur(14px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(140%) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* Input type=date color fix */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.5);
+  cursor: pointer;
+}
+
+/* Selection */
+::selection { background: var(--primary-dim); color: var(--text); }
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--surface-3) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

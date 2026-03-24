@@ -1,0 +1,35 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="finArrowGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="30%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <linearGradient id="finBlueGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Bar Chart / Buildings -->
+  <g fill="url(#finBlueGrad)">
+    <rect x="62" y="70" width="6" height="12" rx="1"/>
+    <rect x="71" y="58" width="6" height="24" rx="1"/>
+    <rect x="80" y="44" width="6" height="38" rx="1"/>
+  </g>
+
+  <!-- S Shape & Pillar -->
+  <path d="M 58 35 C 58 20, 36 20, 36 38 C 36 56, 58 52, 58 70 C 58 88, 36 86, 36 75" stroke="url(#finBlueGrad)" stroke-width="11" stroke-linecap="round"/>
+  <line x1="47" y1="18" x2="47" y2="86" stroke="url(#finBlueGrad)" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- Smaller Arrow -->
+  <path d="M 68 44 L 80 32 M 72 32 L 80 32 L 80 40" stroke="url(#finArrowGrad)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Cross-over outline to create depth -->
+  <path d="M 16 70 C 26 70, 36 60, 48 46 C 58 34, 66 22, 78 14" stroke="#ffffff" stroke-width="15" stroke-linecap="round" opacity="0.1"/>
+
+  <!-- Main Swoosh -->
+  <path d="M 16 70 C 26 70, 36 60, 48 46 C 58 34, 66 22, 78 14" stroke="url(#finArrowGrad)" stroke-width="11" stroke-linecap="round"/>
+  <!-- Main Arrow Head -->
+  <path d="M 62 18 L 86 8 L 76 32 Z" fill="#10b981"/>
+</svg>

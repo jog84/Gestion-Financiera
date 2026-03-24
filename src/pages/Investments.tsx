@@ -249,9 +249,16 @@ export function Investments() {
   const [sectorFilter, setSectorFilter] = useState<string | null>(null);
   const [sortCol, setSortCol] = useState<SortKey | null>("actual");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [currentCcl, setCurrentCcl] = useState<number | null>(null);
+  const [currentCcl, setCurrentCcl] = useState<number | null>(() => {
+    const stored = parseFloat(localStorage.getItem("last_ccl") ?? "");
+    return isFinite(stored) && stored > 0 ? stored : null;
+  });
+  const [cclStale, setCclStale] = useState(true); // true = valor de caché, false = fresco
   const [instrType, setInstrType] = useState<InstrumentType>("cedear");
   const [expandedPos, setExpandedPos] = useState<string | null>(null);
+  const [tickerDetection, setTickerDetection] = useState<{
+    type: InstrumentType; confidence: "high" | "medium" | "low"; reason: string; switched: boolean;
+  } | null>(null);
 
   const emptyForm = {
     ticker: "", name: "", quantity: "", price_ars: "", dolar_ccl: "",
@@ -271,7 +278,15 @@ export function Investments() {
     queryFn: () => getPortfolioSnapshots(PROFILE_ID),
   });
 
-  useEffect(() => { fetchCcl().then(setCurrentCcl).catch(() => {}); }, []);
+  useEffect(() => {
+    fetchCcl()
+      .then(ccl => {
+        setCurrentCcl(ccl);
+        setCclStale(false);
+        localStorage.setItem("last_ccl", String(ccl));
+      })
+      .catch(() => {}); // si falla, usa el valor de localStorage
+  }, []);
 
   const { data: dashSummary } = useQuery({
     queryKey: QK.dashboard(new Date().getFullYear(), new Date().getMonth() + 1),
@@ -523,6 +538,41 @@ export function Investments() {
     e.target.value = "";
   };
 
+  // ─── Ticker detection handler ─────────────────────────────────────────────────
+  const handleTickerChange = (val: string) => {
+    const upper = val.toUpperCase();
+    setForm(f => ({ ...f, ticker: upper }));
+    if (upper.length < 2) { setTickerDetection(null); return; }
+    const detected = detectInstrumentType(upper);
+    const switched = detected.confidence !== "low" && detected.type !== instrType;
+    if (switched) {
+      setInstrType(detected.type);
+      toast.info(`Tipo detectado: ${INSTRUMENT_LABELS[detected.type]}`, { duration: 2500 });
+    }
+    setTickerDetection({ type: detected.type, confidence: detected.confidence, reason: detected.reason, switched });
+  };
+
+  const DetectionChip = () => {
+    if (!tickerDetection || tickerDetection.confidence === "low" || !form.ticker) return null;
+    const isMatch = tickerDetection.type === instrType;
+    const color = tickerDetection.confidence === "high"
+      ? (isMatch ? "var(--success)" : "var(--primary)")
+      : "var(--text-3)";
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "-6px" }}>
+        <span style={{
+          display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: 600,
+          background: `color-mix(in srgb, ${color} 12%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${color} 35%, var(--border))`,
+          borderRadius: "5px", padding: "2px 8px", color,
+        }}>
+          {tickerDetection.switched ? "⚡ Cambiado a:" : "✓"} {INSTRUMENT_LABELS[tickerDetection.type]}
+        </span>
+        <span style={{ fontSize: "10px", color: "var(--text-3)" }}>{tickerDetection.reason}</span>
+      </div>
+    );
+  };
+
   // ─── Form fields ─────────────────────────────────────────────────────────────
   const formFields = () => {
     if (instrType === "plazo_fijo") return (
@@ -559,9 +609,10 @@ export function Investments() {
     if (instrType === "bono") return (
       <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Ticker *" value={form.ticker} onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))} />
+          <Input label="Ticker *" value={form.ticker} onChange={e => handleTickerChange(e.target.value)} />
           <Input label="Nombre (opcional)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
         </div>
+        <DetectionChip />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px" }}>
           <Input label="VN *" type="text" inputMode="decimal" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
           <Input label="Precio % *" type="text" inputMode="decimal" value={form.price_ars} onChange={e => setForm(f => ({ ...f, price_ars: e.target.value }))} />
@@ -577,9 +628,10 @@ export function Investments() {
     if (instrType === "crypto") return (
       <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Ticker *" value={form.ticker} onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))} />
+          <Input label="Ticker *" value={form.ticker} onChange={e => handleTickerChange(e.target.value)} />
           <Input label="Nombre" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
         </div>
+        <DetectionChip />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
           <Input label="Cantidad *" type="text" inputMode="decimal" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
           <Input label="Precio USD compra *" type="text" inputMode="decimal" value={form.price_ars} onChange={e => setForm(f => ({ ...f, price_ars: e.target.value }))} />
@@ -601,18 +653,10 @@ export function Investments() {
     return (
       <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Ticker *" placeholder="Ej: NVDA" value={form.ticker} onChange={e => {
-            const val = e.target.value.toUpperCase();
-            setForm(f => ({ ...f, ticker: val }));
-            if (val.length >= 2) {
-              const detected = detectInstrumentType(val);
-              if (detected.confidence !== "low" && detected.type !== instrType) {
-                setInstrType(detected.type);
-              }
-            }
-          }} />
+          <Input label="Ticker *" placeholder="Ej: NVDAD, GGAL" value={form.ticker} onChange={e => handleTickerChange(e.target.value)} />
           <Input label="Nombre (opcional)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
         </div>
+        <DetectionChip />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
           <Input label="Cantidad *" type="text" inputMode="numeric" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
           <Input label="Precio ARS *" type="text" inputMode="decimal" value={form.price_ars} onChange={e => setForm(f => ({ ...f, price_ars: e.target.value }))} />
@@ -687,13 +731,17 @@ export function Investments() {
               ))}
             </div>
             {currentCcl && (
-              <span style={{
-                display: "inline-flex", alignItems: "center", gap: "4px",
-                background: "var(--surface-2)", border: "1px solid var(--border)",
-                borderRadius: "6px", padding: "2px 8px", fontSize: "11px",
-                color: "var(--text-3)", fontFamily: "var(--font-mono)",
-              }}>
+              <span
+                title={cclStale ? "Último valor guardado — actualizar precios para refrescar" : "CCL actualizado"}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "4px",
+                  background: "var(--surface-2)", border: `1px solid ${cclStale ? "var(--border)" : "color-mix(in srgb, var(--success) 40%, var(--border))"}`,
+                  borderRadius: "6px", padding: "2px 8px", fontSize: "11px",
+                  color: "var(--text-3)", fontFamily: "var(--font-mono)",
+                  opacity: cclStale ? 0.75 : 1,
+                }}>
                 <DollarSign size={10} />CCL: <strong style={{ color: "var(--text-2)" }}>${fNum(currentCcl, 0)}</strong>
+                {cclStale && <span style={{ fontSize: "9px", color: "var(--text-3)" }}>~</span>}
               </span>
             )}
           </div>
@@ -711,11 +759,11 @@ export function Investments() {
         </div>
 
         {/* Derecha: acciones de archivo + nueva inversión */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0, paddingTop: "2px" }}>
-          <Button variant="outline" size="sm" onClick={() => exportInvestmentsTemplate()}><Download size={13} /> Plantilla</Button>
-          <Button variant="outline" size="sm" onClick={() => importRef.current?.click()}><Upload size={13} /> Importar</Button>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0, paddingTop: "2px" }}>
+          <Button variant="outline" size="xs" onClick={() => exportInvestmentsTemplate()}><Download size={11} /> Plantilla</Button>
+          <Button variant="outline" size="xs" onClick={() => importRef.current?.click()}><Upload size={11} /> Importar</Button>
           <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
-          <Button onClick={() => { setModalOpen(true); setForm(emptyForm); }}><Plus size={14} /> Nueva inversión</Button>
+          <Button size="xs" onClick={() => { setModalOpen(true); setForm(emptyForm); }}><Plus size={12} /> Nueva inversión</Button>
         </div>
       </div>
 
@@ -1124,7 +1172,7 @@ export function Investments() {
             <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-3)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "8px" }}>Tipo de instrumento</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
               {(Object.keys(INSTRUMENT_LABELS) as InstrumentType[]).map(t => (
-                <button key={t} onClick={() => { setInstrType(t); setForm(emptyForm); }} style={{
+                <button key={t} onClick={() => { setInstrType(t); setForm(emptyForm); setTickerDetection(null); }} style={{
                   padding: "5px 12px", fontSize: "12px", fontWeight: 600, border: "1px solid",
                   cursor: "pointer", borderRadius: "6px", transition: "all 0.15s",
                   borderColor: instrType === t ? INSTRUMENT_COLORS[t] : "var(--border)",

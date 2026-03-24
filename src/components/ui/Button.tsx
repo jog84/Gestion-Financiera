@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "ghost" | "danger" | "outline" | "success";
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
 }
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -53,6 +53,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     };
 
     const sizes: Record<string, React.CSSProperties> = {
+      xs: { height: "26px", padding: "0 9px", fontSize: "11px", gap: "4px", borderRadius: "7px" },
       sm: { height: "30px", padding: "0 12px", fontSize: "12px" },
       md: { height: "38px", padding: "0 18px", fontSize: "13px" },
       lg: { height: "42px", padding: "0 22px", fontSize: "14px" },

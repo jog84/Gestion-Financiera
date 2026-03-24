@@ -36,4 +36,19 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react":  ["react", "react-dom", "react-router-dom"],
+          "vendor-query":  ["@tanstack/react-query"],
+          "vendor-charts": ["recharts"],
+          "vendor-icons":  ["lucide-react"],
+          "vendor-ui":     ["sonner", "class-variance-authority", "clsx", "tailwind-merge"],
+          "vendor-xlsx":   ["xlsx"],
+        },
+      },
+    },
+  },
 }));

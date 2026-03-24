@@ -80,8 +80,10 @@ export function Reports() {
     enabled: tab === "expenses",
   });
 
+  // NOTA: queryKey usa el mismo prefijo que Dashboard ("monthly_summary")
+  // para que se invalide correctamente cuando se agregan ingresos/gastos
   const { data: incomeSummary = [] } = useQuery({
-    queryKey: ["monthly_summary_12", PROFILE_ID],
+    queryKey: ["monthly_summary", PROFILE_ID, 12],
     queryFn: () => getMonthlySummary(PROFILE_ID, 12),
     enabled: tab === "incomes" || tab === "evolution",
   });

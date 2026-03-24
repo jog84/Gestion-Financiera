@@ -1,3 +1,242 @@
+import type { InvestmentEntry } from "@/types";
+import { formatDate } from "@/lib/utils";
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function fNum(n: number, d = 2) {
+  return new Intl.NumberFormat("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+}
+
+/** Redondeo centesimal para evitar acumulación de errores de punto flotante */
+function r2(x: number): number {
+  return Math.round(x * 100) / 100;
+}
+
+// ─── CalcResult ────────────────────────────────────────────────────────────────
+export interface CalcResult {
+  invertidoArs: number;
+  actualArs: number;
+  gananciaArs: number;
+  gananciaPctArs: number;
+  invertidoUsd: number;
+  actualUsd: number;
+  gananciaUsd: number;
+  /** Retorno USD real: usa cclActual para el precio actual y dolar_ccl para el precio de compra */
+  gananciaPctUsd: number;
+  detalles: string;
+}
+
+// ─── calcRow ──────────────────────────────────────────────────────────────────
+/**
+ * Calcula el resultado financiero de una posición individual.
+ * @param inv       - La inversión a calcular
+ * @param cclActual - CCL actual (solo relevante para CEDEAR/accion). Si se omite,
+ *                    se usa el dolar_ccl de compra → gananciaPctUsd === gananciaPctArs
+ */
+export function calcRow(inv: InvestmentEntry, cclActual?: number | null): CalcResult {
+  const type = inv.instrument_type ?? "cedear";
+  const qty = inv.quantity ?? 0;
+  const priceArs = inv.price_ars ?? 0;
+  const cclCompra = inv.dolar_ccl ?? 0;
+  const cclHoy = cclActual && cclActual > 0 ? cclActual : cclCompra;
+  const currPriceArs = inv.current_price_ars ?? priceArs;
+  const toUsd = (ars: number) => cclHoy > 0 ? r2(ars / cclHoy) : 0;
+
+  if (type === "plazo_fijo") {
+    const capital = priceArs; // monto depositado (guardado en price_ars)
+    const tna100 = (inv.tna ?? 0) / 100;
+    const plazoTotal = inv.plazo_dias ?? 0;
+    // Días transcurridos desde la fecha de apertura del PF hasta hoy
+    const fechaInicio = new Date(inv.transaction_date + "T00:00:00");
+    const diasTranscurridos = Math.floor((Date.now() - fechaInicio.getTime()) / 86400000);
+    // Si ya venció, usar plazo completo (interés ya cobrado)
+    const diasEfectivos = Math.min(Math.max(diasTranscurridos, 0), plazoTotal);
+    const interes = r2(capital * tna100 * (diasEfectivos / 365));
+    const montoActual = r2(capital + interes);
+    const pct = r2(capital > 0 ? (interes / capital) * 100 : 0);
+    return {
+      invertidoArs: capital, actualArs: montoActual,
+      gananciaArs: interes, gananciaPctArs: pct,
+      invertidoUsd: toUsd(capital), actualUsd: toUsd(montoActual),
+      gananciaUsd: toUsd(interes), gananciaPctUsd: pct,
+      detalles: `TNA ${inv.tna ?? 0}% · ${diasEfectivos}/${plazoTotal} días${
+        inv.fecha_vencimiento ? ` · Vence ${formatDate(inv.fecha_vencimiento)}` : ""}`,
+    };
+  }
+
+  if (type === "fci") {
+    const vcpCompra = priceArs, vcpActual = currPriceArs;
+    // FCI argentinos cotizan en ARS — NO dividir por CCL
+    const invertidoArs = r2(qty * vcpCompra);
+    const actualArs = r2(qty * vcpActual);
+    const gananciaArs = r2(actualArs - invertidoArs);
+    const pct = r2(invertidoArs > 0 ? (gananciaArs / invertidoArs) * 100 : 0);
+    return {
+      invertidoArs, actualArs, gananciaArs, gananciaPctArs: pct,
+      invertidoUsd: toUsd(invertidoArs), actualUsd: toUsd(actualArs),
+      gananciaUsd: toUsd(gananciaArs), gananciaPctUsd: pct,
+      detalles: `${fNum(qty)} cuotapartes · VCP $${fNum(vcpCompra)}`,
+    };
+  }
+
+  if (type === "bono") {
+    const vn = qty;
+    const precioCompra = priceArs / 100, precioActual = currPriceArs / 100;
+    const invertidoUsd = r2(vn * precioCompra);
+    const actualUsd = r2(vn * precioActual);
+    const gananciaUsd = r2(actualUsd - invertidoUsd);
+    const pct = r2(invertidoUsd > 0 ? (gananciaUsd / invertidoUsd) * 100 : 0);
+    const toArs = (usd: number) => cclHoy > 0 ? r2(usd * cclHoy) : 0;
+    return {
+      invertidoArs: toArs(invertidoUsd), actualArs: toArs(actualUsd),
+      gananciaArs: toArs(gananciaUsd), gananciaPctArs: pct,
+      invertidoUsd, actualUsd, gananciaUsd, gananciaPctUsd: pct,
+      detalles: `VN ${fNum(vn, 0)} · ${inv.ticker ?? inv.name} @ ${fNum(priceArs)}%${
+        inv.fecha_vencimiento ? ` · Vence ${formatDate(inv.fecha_vencimiento)}` : ""}`,
+    };
+  }
+
+  if (type === "crypto") {
+    // price_ars se usa como precio en USD para crypto (convención del dominio)
+    const precioUsd = priceArs, precioActUsd = currPriceArs;
+    const invertidoUsd = r2(qty * precioUsd);
+    const actualUsd = r2(qty * precioActUsd);
+    const gananciaUsd = r2(actualUsd - invertidoUsd);
+    const pct = r2(invertidoUsd > 0 ? (gananciaUsd / invertidoUsd) * 100 : 0);
+    const toArsC = (usd: number) => cclHoy > 0 ? r2(usd * cclHoy) : 0;
+    return {
+      invertidoArs: toArsC(invertidoUsd), actualArs: toArsC(actualUsd),
+      gananciaArs: toArsC(gananciaUsd), gananciaPctArs: pct,
+      invertidoUsd, actualUsd, gananciaUsd, gananciaPctUsd: pct,
+      detalles: `${fNum(qty, 4)} ${inv.ticker ?? inv.name} · Compra USD ${fNum(precioUsd)}`,
+    };
+  }
+
+  if (type === "otro") {
+    const invertidoArs = inv.amount_invested;
+    const actualArs = inv.current_value ?? inv.amount_invested;
+    const gananciaArs = r2(actualArs - invertidoArs);
+    const pct = r2(invertidoArs > 0 ? (gananciaArs / invertidoArs) * 100 : 0);
+    return {
+      invertidoArs, actualArs, gananciaArs, gananciaPctArs: pct,
+      invertidoUsd: invertidoArs, actualUsd: actualArs,
+      gananciaUsd: gananciaArs, gananciaPctUsd: pct, detalles: "",
+    };
+  }
+
+  // cedear / accion
+  // Retorno ARS: basado en precio en ARS
+  const gananciaArs = r2((currPriceArs - priceArs) * qty);
+  const invertidoArs = r2(priceArs * qty);
+  const pctArs = r2(invertidoArs > 0 ? (gananciaArs / invertidoArs) * 100 : 0);
+
+  // Retorno USD real: usa CCL de compra para el costo y CCL actual para el valor presente
+  const usdCostoUnitario  = cclCompra > 0 ? priceArs    / cclCompra : 0;
+  const usdActualUnitario = cclHoy    > 0 ? currPriceArs / cclHoy   : 0;
+  const invertidoUsd = r2(usdCostoUnitario  * qty);
+  const actualUsd    = r2(usdActualUnitario * qty);
+  const gananciaUsd  = r2(actualUsd - invertidoUsd);
+  const pctUsd       = r2(invertidoUsd > 0 ? (gananciaUsd / invertidoUsd) * 100 : 0);
+
+  return {
+    invertidoArs, actualArs: r2(currPriceArs * qty),
+    gananciaArs, gananciaPctArs: pctArs,
+    invertidoUsd, actualUsd, gananciaUsd, gananciaPctUsd: pctUsd,
+    detalles: qty > 0
+      ? `${fNum(qty, 0)} u. · $${fNum(priceArs)}${cclCompra > 0 ? ` · CCL $${fNum(cclCompra, 0)}` : ""}${
+          cclHoy !== cclCompra && cclHoy > 0 ? ` · CCL act. $${fNum(cclHoy, 0)}` : ""}`
+      : "",
+  };
+}
+
+// ─── calcWeightedReturn ────────────────────────────────────────────────────────
+/** Retorno ponderado por capital invertido del portfolio completo */
+export function calcWeightedReturn(
+  positions: Array<{ invertidoArs: number; gananciaArs: number }>
+): number {
+  const totalInv = positions.reduce((s, p) => s + p.invertidoArs, 0);
+  if (totalInv <= 0) return 0;
+  const weightedSum = positions.reduce(
+    (s, p) => s + (p.invertidoArs > 0 ? (p.gananciaArs / p.invertidoArs) * p.invertidoArs : 0),
+    0
+  );
+  return r2((weightedSum / totalInv) * 100);
+}
+
+// ─── detectInstrumentType ─────────────────────────────────────────────────────
+import type { InstrumentType } from "@/types";
+
+export interface DetectionResult {
+  type: InstrumentType;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+}
+
+const PLAZO_FIJO_RE = /\b(PF|PLAZO|FIJO|DEPOSITO|DEPÓSITO|PLAZO[\s_-]FIJO|TD)\b/i;
+
+const FCI_RE = /^(FCI|PELLEGRINI|MARIVA|DELTA|PIONEER|COMPASS|MEGAINVER|BALANZ|SANTANDER|GALICIA|PATRIA|SCHRODERS|HSBC)\b/i;
+
+const CRYPTO_SET = new Set([
+  "BTC","ETH","SOL","USDT","USDC","BNB","ADA","XRP","DOT","AVAX",
+  "MATIC","LINK","UNI","ATOM","LTC","DOGE","SHIB","NEAR","OP","ARB","WBTC","DAI",
+]);
+
+// AL=Bonares ley local, GD=Globales ley NY, TX=CER-linked,
+// LECAP/LEDE/LECER=letras Tesoro, BOPREAL=BCRA, BPY=bono provincial
+const BONO_RE = /^(AL\d{2}[CD]?|GD\d{2}[CD]?|TX\d{2}|AE\d{2}|LECAP\d*|LEDE\d*|LECER\d*|BOPREAL\d*|BPY\d+|DICA|DICP|PARP|PAR[A-Z]?)$/i;
+
+// CEDEARs conocidos sin sufijo D (ETFs y acciones latam que cotizan directo)
+const CEDEAR_NO_D = new Set([
+  "MELI","GLOB","LOMA","VIST","MORI","LRCX",
+  "SPY","QQQ","EWZ","IWM","GLD","SLV","USO","XLE","XLF","IAU","ARKK","VWO",
+]);
+
+// Panel líder BYMA
+const BYMA_LIDER = new Set([
+  "GGAL","YPFD","PAMP","BBAR","TECO2","TXAR","ALUA","CRES","SUPV","BMA","BYMA",
+  "COME","CTIO","CVH","DGCU2","EDN","FRAN","GRIM","HARG","HAVA","INTR","IRSA",
+  "LEDE","LOMA","LONG","METR","MIRG","MOLI","MORI","OEST","PATA","PBIO","POLL",
+  "RIGO","ROSE","SAMI","SEMI","TGNO4","TGSU2","TRAN","VALO","VLLO",
+]);
+
+export function detectInstrumentType(input: string): DetectionResult {
+  if (!input || input.trim().length === 0)
+    return { type: "otro", confidence: "low", reason: "Ticker vacío" };
+
+  const raw = input.trim();
+  const upper = raw.toUpperCase();
+
+  if (PLAZO_FIJO_RE.test(raw))
+    return { type: "plazo_fijo", confidence: "high", reason: "Contiene palabra clave de plazo fijo" };
+
+  if (FCI_RE.test(raw))
+    return { type: "fci", confidence: "high", reason: "Prefijo de gestora de FCI reconocido" };
+
+  if (CRYPTO_SET.has(upper))
+    return { type: "crypto", confidence: "high", reason: "Ticker de criptomoneda conocido" };
+
+  if (BONO_RE.test(upper))
+    return { type: "bono", confidence: "high", reason: "Ticker de bono soberano/cuasi-soberano argentino" };
+
+  // CEDEAR con sufijo D explícito (AAPLD, NVDAD, AMZND…)
+  if (upper.endsWith("D") && upper.length >= 4) {
+    const base = upper.slice(0, -1);
+    if (base.length >= 3 && /^[A-Z0-9]+$/.test(base))
+      return { type: "cedear", confidence: "high", reason: `Sufijo D indica CEDEAR (base: ${base})` };
+  }
+
+  if (CEDEAR_NO_D.has(upper))
+    return { type: "cedear", confidence: "high", reason: "CEDEAR conocido sin sufijo D" };
+
+  if (BYMA_LIDER.has(upper))
+    return { type: "accion", confidence: "high", reason: "Ticker en panel líder BYMA" };
+
+  // Heurística: 3–5 letras mayúsculas → posible CEDEAR o acción extranjera
+  if (/^[A-Z]{3,5}$/.test(upper))
+    return { type: "cedear", confidence: "medium", reason: "Ticker alfanumérico corto — posible CEDEAR o acción extranjera" };
+
+  return { type: "otro", confidence: "low", reason: "No se pudo identificar el tipo automáticamente" };
+}
+
 // ─── Sector mapping ────────────────────────────────────────────────────────────
 export const SECTOR_MAP: Record<string, string> = {
   // Tecnología
@@ -44,7 +283,13 @@ export function getSector(ticker: string | null | undefined, instrumentType: str
     if (instrumentType === "crypto") return "Crypto";
     return "Otro";
   }
-  const upper = ticker.toUpperCase();
+  let upper = ticker.toUpperCase();
+  // Normalizar sufijo D de CEDEARs: AAPLD → AAPL, NVDAD → NVDA
+  // Solo strip si el ticker base está en el mapa (evita falsos positivos como GOLD → GOL)
+  if (upper.endsWith("D") && upper.length >= 4) {
+    const base = upper.slice(0, -1);
+    if (SECTOR_MAP[base]) upper = base;
+  }
   return SECTOR_MAP[upper] ?? (
     instrumentType === "plazo_fijo" || instrumentType === "bono" ? "Renta Fija" :
     instrumentType === "fci" ? "Fondos" :
@@ -157,7 +402,7 @@ export interface InsightPosition {
   maturityDate?: string | null;
 }
 
-function fNum(n: number) {
+function fInt(n: number) {
   return n.toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
@@ -179,7 +424,7 @@ export function generateSmartInsights(
         level: "critical",
         title: `${pos.key} representa el ${(weight * 100).toFixed(0)}% del portfolio`,
         description: "Una posición por encima del 30% concentra demasiado riesgo no diversificado.",
-        action: `Reducir al 20% liberaría $${fNum(excessValue)}`,
+        action: `Reducir al 20% liberaría $${fInt(excessValue)}`,
       });
     } else if (weight > 0.20) {
       insights.push({
@@ -250,7 +495,7 @@ export function generateSmartInsights(
         insights.push({
           level: venc <= in15 ? "warning" : "info",
           title: `${pos.key} vence el ${venc.toLocaleDateString("es-AR")}`,
-          description: `Capital: $${fNum(pos.currentValue)}. Decidir: renovar o redirigir.`,
+          description: `Capital: $${fInt(pos.currentValue)}. Decidir: renovar o redirigir.`,
         });
       }
     }

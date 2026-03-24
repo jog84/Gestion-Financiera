@@ -6,7 +6,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
-import { getGoals, createGoal, deleteGoal, updateGoalAmount, getMilestones, createMilestone, deleteMilestone, checkAndMarkMilestones } from "@/lib/api";
+import { getGoals, createGoal, deleteGoal, updateGoalAmount, getMilestones, createMilestone, deleteMilestone, checkAndMarkMilestones, getMonthlySummary } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportGoalsTemplate, importGoals } from "@/lib/excel";
 import { toast } from "sonner";
@@ -157,11 +157,22 @@ export function Goals() {
   });
 
   const qc = useQueryClient();
+  const now = new Date();
 
   const { data: goals = [], isLoading } = useQuery({
     queryKey: ["goals", PROFILE_ID],
     queryFn: () => getGoals(PROFILE_ID),
   });
+
+  // Ahorro mensual promedio de los últimos 6 meses para proyectar fechas de cumplimiento
+  const { data: monthlySummary = [] } = useQuery({
+    queryKey: ["monthly_summary", PROFILE_ID, 6],
+    queryFn: () => getMonthlySummary(PROFILE_ID, 6),
+  });
+
+  const avgMonthlySavings = monthlySummary.length > 0
+    ? monthlySummary.reduce((s, m) => s + Math.max(0, m.total_income - m.total_expenses), 0) / monthlySummary.length
+    : 0;
 
   const addMutation = useMutation({
     mutationFn: () =>
@@ -278,6 +289,13 @@ export function Goals() {
           {goals.map((goal) => {
             const pct = Math.min(100, goal.target_amount > 0 ? (goal.current_amount / goal.target_amount) * 100 : 0);
             const isCompleted = pct >= 100;
+            const remaining = Math.max(0, goal.target_amount - goal.current_amount);
+            const monthsToGoal = !isCompleted && avgMonthlySavings > 0 && remaining > 0
+              ? Math.ceil(remaining / avgMonthlySavings)
+              : null;
+            const projectedDate = monthsToGoal !== null
+              ? new Date(now.getFullYear(), now.getMonth() + monthsToGoal, 1)
+              : null;
             return (
               <div
                 key={goal.id}
@@ -321,6 +339,15 @@ export function Goals() {
                   <h3 style={{ fontSize: "13px", fontWeight: 600, color: "var(--text)" }}>{goal.name}</h3>
                   {goal.target_date && (
                     <p style={{ marginTop: "2px", fontSize: "11px", color: "var(--text-3)" }}>Meta: {formatDate(goal.target_date)}</p>
+                  )}
+                  {projectedDate && (
+                    <p style={{ marginTop: "2px", fontSize: "11px", color: "var(--primary)" }}>
+                      Proyectado: {projectedDate.toLocaleDateString("es-AR", { month: "short", year: "numeric" })}
+                      {" "}({monthsToGoal === 1 ? "1 mes" : `${monthsToGoal} meses`})
+                    </p>
+                  )}
+                  {!isCompleted && avgMonthlySavings <= 0 && !projectedDate && (
+                    <p style={{ marginTop: "2px", fontSize: "11px", color: "var(--text-3)" }}>Sin ahorro promedio para proyectar</p>
                   )}
                 </div>
 

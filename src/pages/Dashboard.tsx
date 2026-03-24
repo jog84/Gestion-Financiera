@@ -10,6 +10,7 @@ import {
 import { MonthSelector } from "@/components/MonthSelector";
 import {
   getDashboardSummary, getMonthlySummary, getExpenseBreakdown, getRecentTransactions,
+  getRecurringTransactions,
 } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -178,10 +179,16 @@ export function Dashboard() {
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
-  const { data: summary,      isLoading: ls } = useQuery({ queryKey: ["dashboard",           PROFILE_ID, year, month], queryFn: () => getDashboardSummary(PROFILE_ID, year, month) });
-  const { data: monthly = [],  isLoading: lm } = useQuery({ queryKey: ["monthly_summary",    PROFILE_ID],              queryFn: () => getMonthlySummary(PROFILE_ID, 6) });
-  const { data: breakdown = [], isLoading: lb } = useQuery({ queryKey: ["expense_breakdown",  PROFILE_ID, year, month], queryFn: () => getExpenseBreakdown(PROFILE_ID, year, month) });
-  const { data: recent = [],   isLoading: lr } = useQuery({ queryKey: ["recent_transactions", PROFILE_ID],             queryFn: () => getRecentTransactions(PROFILE_ID, 8) });
+  const { data: summary,        isLoading: ls } = useQuery({ queryKey: ["dashboard",           PROFILE_ID, year, month], queryFn: () => getDashboardSummary(PROFILE_ID, year, month) });
+  const { data: monthly = [],    isLoading: lm } = useQuery({ queryKey: ["monthly_summary",    PROFILE_ID, 6],           queryFn: () => getMonthlySummary(PROFILE_ID, 6) });
+  const { data: breakdown = [],  isLoading: lb } = useQuery({ queryKey: ["expense_breakdown",  PROFILE_ID, year, month], queryFn: () => getExpenseBreakdown(PROFILE_ID, year, month) });
+  const { data: recent = [],     isLoading: lr } = useQuery({ queryKey: ["recent_transactions", PROFILE_ID, 8],          queryFn: () => getRecentTransactions(PROFILE_ID, 8) });
+  const { data: recurring = [] }                 = useQuery({ queryKey: ["recurring",           PROFILE_ID],             queryFn: () => getRecurringTransactions(PROFILE_ID), staleTime: 60_000 });
+
+  // Compromisos fijos mensuales activos (para sub-label del balance)
+  const monthlyFixed = recurring
+    .filter(t => t.is_active && t.kind === "expense" && t.frequency === "monthly")
+    .reduce((s, t) => s + t.amount, 0);
 
   const income      = summary?.total_income   ?? 0;
   const expenses    = summary?.total_expenses ?? 0;
@@ -282,7 +289,10 @@ export function Dashboard() {
                   {balance >= 0 ? "Superávit" : "Déficit"}
                 </Pill>
               }
-              sub={balance >= 0 ? "Mes en positivo" : "Revisá tus gastos"}
+              sub={balance >= 0
+                ? `Mes en positivo${monthlyFixed > 0 ? ` · Fijos: ${formatCurrency(monthlyFixed)}/mes` : ""}`
+                : `Revisá tus gastos${monthlyFixed > 0 ? ` · Fijos: ${formatCurrency(monthlyFixed)}/mes` : ""}`
+              }
             />
             <KpiCard
               label="Tasa de ahorro"

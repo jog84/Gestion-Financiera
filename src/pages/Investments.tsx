@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import {
   getInvestments, createInvestment, deleteInvestment,
   fetchPrices, fetchCcl, updatePricesByTicker, updateInvestmentValue,
-  savePortfolioSnapshot, getPortfolioSnapshots,
+  savePortfolioSnapshot, getPortfolioSnapshots, getDashboardSummary,
 } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import { exportInvestmentsTemplate, importInvestments } from "@/lib/excel";
@@ -22,8 +22,8 @@ import { toast } from "sonner";
 import type { InvestmentEntry, InstrumentType } from "@/types";
 
 import {
-  getSector, calcCAGR, calcXIRR, calcPositionSignals,
-  generateSmartInsights,
+  calcRow, getSector, calcCAGR, calcXIRR, calcPositionSignals,
+  generateSmartInsights, detectInstrumentType,
   type CashFlow, type Signal,
 } from "@/lib/investmentCalcs";
 import { PortfolioKPIBar } from "@/components/investments/PortfolioKPIBar";
@@ -71,101 +71,6 @@ function fNum(n: number, d = 2) {
 }
 function fPct(n: number) { return (n >= 0 ? "+" : "") + n.toFixed(2) + "%"; }
 
-// ─── Calculations ─────────────────────────────────────────────────────────────
-interface CalcResult {
-  invertidoArs: number; actualArs: number; gananciaArs: number; gananciaPctArs: number;
-  invertidoUsd: number; actualUsd: number; gananciaUsd: number; gananciaPctUsd: number;
-  detalles: string;
-}
-
-function calcRow(inv: InvestmentEntry): CalcResult {
-  const type = inv.instrument_type ?? "cedear";
-  const qty = inv.quantity ?? 0;
-  const priceArs = inv.price_ars ?? 0;
-  const ccl = inv.dolar_ccl ?? 0;
-  const currPriceArs = inv.current_price_ars ?? priceArs;
-  const toUsd = (ars: number) => ccl > 0 ? ars / ccl : 0;
-  const toArs = (usd: number) => ccl > 0 ? usd * ccl : 0;
-
-  if (type === "plazo_fijo") {
-    const monto = priceArs;
-    const tna = inv.tna ?? 0;
-    const dias = inv.plazo_dias ?? 0;
-    const gananciaArs = monto * (tna / 100) * (dias / 365);
-    const montoFinal = monto + gananciaArs;
-    return {
-      invertidoArs: monto, actualArs: montoFinal,
-      gananciaArs, gananciaPctArs: monto > 0 ? (gananciaArs / monto) * 100 : 0,
-      invertidoUsd: toUsd(monto), actualUsd: toUsd(montoFinal),
-      gananciaUsd: toUsd(gananciaArs), gananciaPctUsd: monto > 0 ? (gananciaArs / monto) * 100 : 0,
-      detalles: `TNA ${tna}% · ${dias} días${inv.fecha_vencimiento ? ` · Vence ${formatDate(inv.fecha_vencimiento)}` : ""}`,
-    };
-  }
-  if (type === "fci") {
-    const vcpCompra = priceArs, vcpActual = currPriceArs;
-    const invertidoArs = qty * vcpCompra, actualArs = qty * vcpActual;
-    const gananciaArs = actualArs - invertidoArs;
-    const pct = invertidoArs > 0 ? (gananciaArs / invertidoArs) * 100 : 0;
-    return {
-      invertidoArs, actualArs, gananciaArs, gananciaPctArs: pct,
-      invertidoUsd: toUsd(invertidoArs), actualUsd: toUsd(actualArs),
-      gananciaUsd: toUsd(gananciaArs), gananciaPctUsd: pct,
-      detalles: `${fNum(qty)} cuotapartes · VCP $${fNum(vcpCompra)}`,
-    };
-  }
-  if (type === "bono") {
-    const vn = qty;
-    const precioCompra = priceArs / 100, precioActual = currPriceArs / 100;
-    const invertidoUsd = vn * precioCompra, actualUsd = vn * precioActual;
-    const gananciaUsd = actualUsd - invertidoUsd;
-    const pct = invertidoUsd > 0 ? (gananciaUsd / invertidoUsd) * 100 : 0;
-    return {
-      invertidoArs: toArs(invertidoUsd), actualArs: toArs(actualUsd),
-      gananciaArs: toArs(gananciaUsd), gananciaPctArs: pct,
-      invertidoUsd, actualUsd, gananciaUsd, gananciaPctUsd: pct,
-      detalles: `VN ${fNum(vn, 0)} · ${inv.ticker ?? inv.name} @ ${fNum(priceArs)}%${inv.fecha_vencimiento ? ` · Vence ${formatDate(inv.fecha_vencimiento)}` : ""}`,
-    };
-  }
-  if (type === "crypto") {
-    const precioUsd = priceArs, precioActUsd = currPriceArs;
-    const invertidoUsd = qty * precioUsd, actualUsd = qty * precioActUsd;
-    const gananciaUsd = actualUsd - invertidoUsd;
-    const pct = invertidoUsd > 0 ? (gananciaUsd / invertidoUsd) * 100 : 0;
-    return {
-      invertidoArs: toArs(invertidoUsd), actualArs: toArs(actualUsd),
-      gananciaArs: toArs(gananciaUsd), gananciaPctArs: pct,
-      invertidoUsd, actualUsd, gananciaUsd, gananciaPctUsd: pct,
-      detalles: `${fNum(qty, 4)} ${inv.ticker ?? inv.name} · Compra USD ${fNum(precioUsd)}`,
-    };
-  }
-  if (type === "otro") {
-    const invertidoArs = inv.amount_invested;
-    const actualArs = inv.current_value ?? inv.amount_invested;
-    const gananciaArs = actualArs - invertidoArs;
-    const pct = invertidoArs > 0 ? (gananciaArs / invertidoArs) * 100 : 0;
-    return {
-      invertidoArs, actualArs, gananciaArs, gananciaPctArs: pct,
-      invertidoUsd: invertidoArs, actualUsd: actualArs,
-      gananciaUsd: gananciaArs, gananciaPctUsd: pct, detalles: "",
-    };
-  }
-  // cedear / accion
-  const usdCosto = ccl > 0 ? priceArs / ccl : 0;
-  const usdActual = ccl > 0 ? currPriceArs / ccl : 0;
-  const gananciaUsd = usdActual - usdCosto;
-  const pctUsd = usdCosto > 0 ? (gananciaUsd / usdCosto) * 100 : 0;
-  const gananciaArs = (currPriceArs - priceArs) * qty;
-  const invertidoArs = priceArs * qty;
-  const pctArs = invertidoArs > 0 ? (gananciaArs / invertidoArs) * 100 : 0;
-  return {
-    invertidoArs, actualArs: currPriceArs * qty,
-    gananciaArs, gananciaPctArs: pctArs,
-    invertidoUsd: usdCosto * qty, actualUsd: usdActual * qty,
-    gananciaUsd: gananciaUsd * qty, gananciaPctUsd: pctUsd,
-    detalles: qty > 0 ? `${fNum(qty, 0)} u. · $${fNum(priceArs)}${ccl > 0 ? ` · CCL $${fNum(ccl, 0)}` : ""}` : "",
-  };
-}
-
 // ─── Enhanced Position ────────────────────────────────────────────────────────
 export interface EnhancedPosition {
   key: string;
@@ -192,6 +97,7 @@ function buildPositions(
   invs: InvestmentEntry[],
   totalPortfolioArs: number,
   sectorTotals: Record<string, number>,
+  currentCcl?: number | null,
 ): EnhancedPosition[] {
   const map = new Map<string, { type: InstrumentType; name: string; ticker: string | null; entries: InvestmentEntry[] }>();
   for (const inv of invs) {
@@ -207,7 +113,7 @@ function buildPositions(
     let maturityDate: string | null = null;
 
     for (const inv of entries) {
-      const c = calcRow(inv);
+      const c = calcRow(inv, currentCcl);
       invertidoArs += c.invertidoArs; actualArs += c.actualArs;
       invertidoUsd += c.invertidoUsd; actualUsd += c.actualUsd;
       if (inv.quantity && inv.price_ars) {
@@ -261,10 +167,10 @@ function sortPositions(list: EnhancedPosition[], key: SortKey | null, dir: SortD
   });
 }
 
-function sortTransactions(list: InvestmentEntry[], key: SortKey | null, dir: SortDir, currency: Currency) {
+function sortTransactions(list: InvestmentEntry[], key: SortKey | null, dir: SortDir, currency: Currency, currentCcl?: number | null) {
   if (!key) return list;
   return [...list].sort((a, b) => {
-    const ra = calcRow(a), rb = calcRow(b);
+    const ra = calcRow(a, currentCcl), rb = calcRow(b, currentCcl);
     const isArs = currency === "ARS";
     let va = 0, vb = 0;
     if (key === "fecha") { va = new Date(a.transaction_date).getTime(); vb = new Date(b.transaction_date).getTime(); }
@@ -366,6 +272,12 @@ export function Investments() {
 
   useEffect(() => { fetchCcl().then(setCurrentCcl).catch(() => {}); }, []);
 
+  const { data: dashSummary } = useQuery({
+    queryKey: ["dashboard", PROFILE_ID, new Date().getFullYear(), new Date().getMonth() + 1],
+    queryFn: () => getDashboardSummary(PROFILE_ID, new Date().getFullYear(), new Date().getMonth() + 1),
+    staleTime: 60_000,
+  });
+
   const handleSort = (col: SortKey) => {
     if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortCol(col); setSortDir("desc"); }
@@ -373,30 +285,30 @@ export function Investments() {
 
   // ─── Totals ──────────────────────────────────────────────────────────────────
   const totals = useMemo(() => investments.reduce((acc, inv) => {
-    const c = calcRow(inv);
+    const c = calcRow(inv, currentCcl);
     return {
       invertidoArs: acc.invertidoArs + c.invertidoArs,
       actualArs: acc.actualArs + c.actualArs,
       invertidoUsd: acc.invertidoUsd + c.invertidoUsd,
       actualUsd: acc.actualUsd + c.actualUsd,
     };
-  }, { invertidoArs: 0, actualArs: 0, invertidoUsd: 0, actualUsd: 0 }), [investments]);
+  }, { invertidoArs: 0, actualArs: 0, invertidoUsd: 0, actualUsd: 0 }), [investments, currentCcl]);
 
   // ─── Sector totals (for signal calc) ─────────────────────────────────────────
   const sectorTotals = useMemo(() => {
     const map: Record<string, number> = {};
     for (const inv of investments) {
       const s = getSector(inv.ticker, inv.instrument_type ?? "cedear");
-      const c = calcRow(inv);
+      const c = calcRow(inv, currentCcl);
       map[s] = (map[s] ?? 0) + c.actualArs;
     }
     return map;
-  }, [investments]);
+  }, [investments, currentCcl]);
 
   // ─── Positions ───────────────────────────────────────────────────────────────
   const positions = useMemo(
-    () => buildPositions(investments, totals.actualArs, sectorTotals),
-    [investments, totals.actualArs, sectorTotals],
+    () => buildPositions(investments, totals.actualArs, sectorTotals, currentCcl),
+    [investments, totals.actualArs, sectorTotals, currentCcl],
   );
 
   // ─── CAGR / XIRR ─────────────────────────────────────────────────────────────
@@ -409,14 +321,14 @@ export function Investments() {
     const cagr = calcCAGR(totals.invertidoArs, totals.actualArs, firstDate);
 
     const cashFlows: CashFlow[] = investments.map(inv => {
-      const c = calcRow(inv);
+      const c = calcRow(inv, currentCcl);
       return { date: new Date(inv.transaction_date), amount: -c.invertidoArs };
     });
     cashFlows.push({ date: new Date(), amount: totals.actualArs });
     cashFlows.sort((a, b) => a.date.getTime() - b.date.getTime());
     const xirr = calcXIRR(cashFlows);
     return { cagr, xirr };
-  }, [investments, totals]);
+  }, [investments, totals, currentCcl]);
 
   // ─── Smart insights ───────────────────────────────────────────────────────────
   const insights = useMemo(() => generateSmartInsights(
@@ -428,8 +340,8 @@ export function Investments() {
       maturityDate: p.maturityDate,
     })),
     totals.actualArs,
-    0,
-  ), [positions, totals.actualArs]);
+    dashSummary?.balance ?? 0,
+  ), [positions, totals.actualArs, dashSummary]);
 
   // ─── Chart data ───────────────────────────────────────────────────────────────
   const chartData = useMemo(() => {
@@ -448,7 +360,7 @@ export function Investments() {
     const isArs = currency === "ARS";
     for (const [date, invs] of dateGroups) {
       for (const inv of invs) {
-        const c = calcRow(inv);
+        const c = calcRow(inv, currentCcl);
         cumInvested += isArs ? c.invertidoArs : c.invertidoUsd;
       }
       points.push({ date, invested: cumInvested, portfolio: cumInvested });
@@ -466,6 +378,11 @@ export function Investments() {
   const dispAct = currency === "ARS" ? totals.actualArs : totals.actualUsd;
   const dispGan = dispAct - dispInv;
   const isGainPos = dispGan >= 0;
+
+  // Retorno USD real (usa CCL actual para valor presente, CCL compra para costo)
+  const portfolioReturnPctUsd = currentCcl && totals.invertidoUsd > 0
+    ? ((totals.actualUsd - totals.invertidoUsd) / totals.invertidoUsd) * 100
+    : undefined;
 
   // ─── Filter & sort ────────────────────────────────────────────────────────────
   const filteredPositions = useMemo(() => {
@@ -486,8 +403,8 @@ export function Investments() {
       const q = filterText.toLowerCase();
       list = list.filter(inv => (inv.ticker ?? "").toLowerCase().includes(q) || inv.name.toLowerCase().includes(q));
     }
-    return sortTransactions(list, sortCol, sortDir, currency);
-  }, [investments, filterText, sortCol, sortDir, currency]);
+    return sortTransactions(list, sortCol, sortDir, currency, currentCcl);
+  }, [investments, filterText, sortCol, sortDir, currency, currentCcl]);
 
   // ─── Mutations ────────────────────────────────────────────────────────────────
   const p = (s: string) => parseFloat(s.replace(",", ".")) || 0;
@@ -502,8 +419,8 @@ export function Investments() {
         amtInvested = priceArs;
         currValue = priceArs * (1 + (tna / 100) * (dias / 365));
       } else if (instrType === "fci") {
-        amtInvested = qty * priceArs / (ccl || 1);
-        currValue = qty * currPrice / (ccl || 1);
+        amtInvested = qty * priceArs;
+        currValue = qty * currPrice;
       } else if (instrType === "bono") {
         amtInvested = qty * (priceArs / 100); currValue = qty * (currPrice / 100);
       } else if (instrType === "crypto") {
@@ -572,9 +489,9 @@ export function Investments() {
 
       // Save portfolio snapshot after price refresh
       try {
-        const recalcArs = investments.reduce((s, inv) => s + calcRow(inv).actualArs, 0);
-        const recalcUsd = investments.reduce((s, inv) => s + calcRow(inv).actualUsd, 0);
-        const recalcInvArs = investments.reduce((s, inv) => s + calcRow(inv).invertidoArs, 0);
+        const recalcArs = investments.reduce((s, inv) => s + calcRow(inv, ccl ?? currentCcl).actualArs, 0);
+        const recalcUsd = investments.reduce((s, inv) => s + calcRow(inv, ccl ?? currentCcl).actualUsd, 0);
+        const recalcInvArs = investments.reduce((s, inv) => s + calcRow(inv, ccl ?? currentCcl).invertidoArs, 0);
         await savePortfolioSnapshot(PROFILE_ID, recalcArs, recalcUsd, recalcInvArs, ccl ?? currentCcl ?? 0);
         qc.invalidateQueries({ queryKey: ["portfolio-snapshots"] });
       } catch { /* snapshot is non-critical */ }
@@ -683,7 +600,16 @@ export function Investments() {
     return (
       <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Ticker *" placeholder="Ej: NVDA" value={form.ticker} onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))} />
+          <Input label="Ticker *" placeholder="Ej: NVDA" value={form.ticker} onChange={e => {
+            const val = e.target.value.toUpperCase();
+            setForm(f => ({ ...f, ticker: val }));
+            if (val.length >= 2) {
+              const detected = detectInstrumentType(val);
+              if (detected.confidence !== "low" && detected.type !== instrType) {
+                setInstrType(detected.type);
+              }
+            }
+          }} />
           <Input label="Nombre (opcional)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
@@ -803,6 +729,7 @@ export function Investments() {
               xirr={xirr}
               currency={currency}
               sym={sym}
+              returnPctUsd={portfolioReturnPctUsd}
             />
           </div>
 
@@ -990,7 +917,7 @@ export function Investments() {
                                     </thead>
                                     <tbody>
                                       {pos.entries.slice().sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()).map((inv, ei) => {
-                                        const c = calcRow(inv);
+                                        const c = calcRow(inv, currentCcl);
                                         const dInv = isArs ? c.invertidoArs : c.invertidoUsd;
                                         const dAct = isArs ? c.actualArs : c.actualUsd;
                                         const dGan = isArs ? c.gananciaArs : c.gananciaUsd;
@@ -1101,7 +1028,7 @@ export function Investments() {
                   </thead>
                   <tbody>
                     {filteredTransactions.map((inv, i) => {
-                      const c = calcRow(inv);
+                      const c = calcRow(inv, currentCcl);
                       const isArs = currency === "ARS";
                       const investido = isArs ? c.invertidoArs : c.invertidoUsd;
                       const actual = isArs ? c.actualArs : c.actualUsd;

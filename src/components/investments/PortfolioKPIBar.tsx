@@ -7,6 +7,9 @@ interface PortfolioKPIBarProps {
   xirr: number | null;
   currency: "ARS" | "USD";
   sym: string;
+  /** Retorno porcentual en USD real (usa CCL actual para el valor presente).
+   *  undefined = no disponible (sin CCL actual). */
+  returnPctUsd?: number;
 }
 
 function fNum(n: number, d = 2) {
@@ -81,7 +84,7 @@ function KPICard({ label, value, subValue, subLabel, trend, alert, alertLabel, m
   );
 }
 
-export function PortfolioKPIBar({ portfolioValue, totalInvested, cagr, xirr, currency, sym }: PortfolioKPIBarProps) {
+export function PortfolioKPIBar({ portfolioValue, totalInvested, cagr, xirr, sym, returnPctUsd }: PortfolioKPIBarProps) {
   const ganancia = portfolioValue - totalInvested;
   const retTotal = totalInvested > 0 ? ganancia / totalInvested : 0;
   const isPos = ganancia >= 0;
@@ -131,15 +134,24 @@ export function PortfolioKPIBar({ portfolioValue, totalInvested, cagr, xirr, cur
         />
       )}
 
-      {/* Moneda display */}
-      <KPICard
-        label="Moneda"
-        value={currency}
-        subValue={`${sym}${fNum(portfolioValue / (currency === "ARS" ? 1 : 1), 0)}`}
-        subLabel="valor actual"
-        trend="neutral"
-        mono={false}
-      />
+      {/* Retorno en USD (con CCL actual) */}
+      {returnPctUsd !== undefined ? (
+        <KPICard
+          label="Retorno en USD"
+          value={fPct(returnPctUsd / 100)}
+          subLabel="usando CCL actual"
+          trend={returnPctUsd > 0 ? "up" : returnPctUsd < 0 ? "down" : "neutral"}
+          alert={Math.abs(returnPctUsd) < 1 && returnPctUsd !== 0}
+          alertLabel={Math.abs(returnPctUsd) < 1 ? "Casi neutro vs USD" : undefined}
+        />
+      ) : (
+        <KPICard
+          label="Retorno en USD"
+          value="—"
+          subLabel="actualizar CCL para ver"
+          trend="neutral"
+        />
+      )}
     </div>
   );
 }

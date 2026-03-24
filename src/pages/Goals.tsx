@@ -253,15 +253,15 @@ export function Goals() {
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Button variant="outline" size="sm" onClick={() => exportGoalsTemplate()}>
-            <Download size={13} /> Descargar plantilla
+          <Button variant="outline" size="xs" onClick={() => exportGoalsTemplate()}>
+            <Download size={11} /> Descargar plantilla
           </Button>
-          <Button variant="outline" size="sm" onClick={() => importRef.current?.click()}>
-            <Upload size={13} /> Importar
+          <Button variant="outline" size="xs" onClick={() => importRef.current?.click()}>
+            <Upload size={11} /> Importar
           </Button>
           <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
-          <Button onClick={() => setModalOpen(true)}>
-            <Plus size={14} />
+          <Button size="xs" onClick={() => setModalOpen(true)}>
+            <Plus size={12} />
             Nuevo objetivo
           </Button>
         </div>

@@ -94,6 +94,17 @@ export interface EnhancedPosition {
   sectorWeight: number; // 0-1
 }
 
+/**
+ * Corrige el tipo almacenado cuando fue guardado como "cedear" por defecto.
+ * Usa detectInstrumentType con confianza alta para no hacer cambios agresivos.
+ */
+function effectiveType(ticker: string | null | undefined, storedType: InstrumentType | null | undefined): InstrumentType {
+  const base = storedType ?? "cedear";
+  if (base !== "cedear" || !ticker) return base;
+  const detected = detectInstrumentType(ticker);
+  return detected.confidence === "high" ? detected.type : base;
+}
+
 function buildPositions(
   invs: InvestmentEntry[],
   totalPortfolioArs: number,
@@ -103,9 +114,10 @@ function buildPositions(
   const map = new Map<string, { type: InstrumentType; name: string; ticker: string | null; entries: InvestmentEntry[] }>();
   for (const inv of invs) {
     const key = (inv.ticker ?? inv.name).toUpperCase();
+    const type = effectiveType(inv.ticker, inv.instrument_type);
     const ex = map.get(key);
     if (ex) ex.entries.push(inv);
-    else map.set(key, { type: inv.instrument_type ?? "cedear", name: inv.name, ticker: inv.ticker, entries: [inv] });
+    else map.set(key, { type, name: inv.name, ticker: inv.ticker, entries: [inv] });
   }
 
   return Array.from(map.entries()).map(([key, { type, name, ticker, entries }]) => {
@@ -314,7 +326,7 @@ export function Investments() {
   const sectorTotals = useMemo(() => {
     const map: Record<string, number> = {};
     for (const inv of investments) {
-      const s = getSector(inv.ticker, inv.instrument_type ?? "cedear");
+      const s = getSector(inv.ticker, effectiveType(inv.ticker, inv.instrument_type));
       const c = calcRow(inv, currentCcl);
       map[s] = (map[s] ?? 0) + c.actualArs;
     }
@@ -1099,7 +1111,7 @@ export function Investments() {
                       const ganancia = isArs ? c.gananciaArs : c.gananciaUsd;
                       const pct = isArs ? c.gananciaPctArs : c.gananciaPctUsd;
                       const isPos = ganancia >= 0;
-                      const type = inv.instrument_type ?? "cedear";
+                      const type = effectiveType(inv.ticker, inv.instrument_type);
                       return (
                         <tr key={inv.id}
                           style={{ borderBottom: i !== filteredTransactions.length - 1 ? "1px solid var(--border-light)" : "none", transition: "background 0.1s" }}

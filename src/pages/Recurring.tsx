@@ -202,12 +202,12 @@ export function Recurring() {
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Button variant="outline" size="sm" onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending}>
-            <RefreshCw size={13} />
+          <Button variant="outline" size="xs" onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending}>
+            <RefreshCw size={11} />
             {applyMutation.isPending ? "Aplicando..." : "Aplicar vencidas"}
           </Button>
-          <Button onClick={openNew}>
-            <Plus size={14} />
+          <Button size="xs" onClick={openNew}>
+            <Plus size={12} />
             Nueva recurrente
           </Button>
         </div>

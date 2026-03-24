@@ -158,18 +158,18 @@ export function Assets() {
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Button variant="outline" size="sm" onClick={() => snapshotMutation.mutate()} disabled={assets.length === 0 || snapshotMutation.isPending}>
-            <Save size={13} /> Guardar snapshot
+          <Button variant="outline" size="xs" onClick={() => snapshotMutation.mutate()} disabled={assets.length === 0 || snapshotMutation.isPending}>
+            <Save size={11} /> Guardar snapshot
           </Button>
-          <Button variant="outline" size="sm" onClick={() => exportAssetsTemplate()}>
-            <Download size={13} /> Descargar plantilla
+          <Button variant="outline" size="xs" onClick={() => exportAssetsTemplate()}>
+            <Download size={11} /> Descargar plantilla
           </Button>
-          <Button variant="outline" size="sm" onClick={() => importRef.current?.click()}>
-            <Upload size={13} /> Importar
+          <Button variant="outline" size="xs" onClick={() => importRef.current?.click()}>
+            <Upload size={11} /> Importar
           </Button>
           <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
-          <Button onClick={() => setModalOpen(true)}>
-            <Plus size={14} />
+          <Button size="xs" onClick={() => setModalOpen(true)}>
+            <Plus size={12} />
             Nuevo activo
           </Button>
         </div>

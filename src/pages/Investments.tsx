@@ -650,53 +650,68 @@ export function Investments() {
     <div style={{ padding: "28px 32px", maxWidth: "1560px" }}>
 
       {/* ── Header ───────────────────────────────────────────────────────────── */}
-      <div className="animate-fade-in-up" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "20px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <h1 style={{ fontSize: "20px", fontWeight: 600, color: "var(--text)", letterSpacing: "-0.01em" }}>Inversiones</h1>
-          {currentCcl && (
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: "4px",
-              background: "var(--surface-2)", border: "1px solid var(--border)",
-              borderRadius: "6px", padding: "3px 8px", fontSize: "11px",
-              color: "var(--text-3)", fontFamily: "var(--font-mono)",
-            }}>
-              <DollarSign size={10} />CCL: <strong style={{ color: "var(--text-2)" }}>${fNum(currentCcl, 0)}</strong>
-            </span>
-          )}
-          {sectorFilter && (
-            <span
-              onClick={() => setSectorFilter(null)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: "5px",
-                background: "color-mix(in srgb, var(--primary) 12%, transparent)",
-                border: "1px solid color-mix(in srgb, var(--primary) 30%, var(--border))",
-                borderRadius: "6px", padding: "3px 10px", fontSize: "11px",
-                color: "var(--primary)", cursor: "pointer", fontWeight: 500,
-              }}
-            >
-              Sector: {sectorFilter} ×
-            </span>
-          )}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {/* Currency toggle */}
-          <div style={{ display: "flex", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "8px", padding: "3px", gap: "2px" }}>
-            {(["ARS", "USD"] as Currency[]).map(c => (
-              <button key={c} onClick={() => setCurrency(c)} style={{
-                padding: "4px 12px", fontSize: "12px", fontWeight: 600, border: "none", cursor: "pointer",
-                borderRadius: "6px", fontFamily: "var(--font-mono)",
-                background: currency === c ? "var(--primary)" : "transparent",
-                color: currency === c ? "#fff" : "var(--text-3)", transition: "all 0.15s",
-              }}>{c}</button>
-            ))}
+      <div className="animate-fade-in-up" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "20px", gap: "16px" }}>
+
+        {/* Izquierda: título + toggle/CCL + acciones operativas */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+
+          {/* Fila 1: título + chip sector */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <h1 style={{ fontSize: "20px", fontWeight: 600, color: "var(--text)", letterSpacing: "-0.01em" }}>Inversiones</h1>
+            {sectorFilter && (
+              <span
+                onClick={() => setSectorFilter(null)}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "5px",
+                  background: "color-mix(in srgb, var(--primary) 12%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--primary) 30%, var(--border))",
+                  borderRadius: "6px", padding: "2px 8px", fontSize: "11px",
+                  color: "var(--primary)", cursor: "pointer", fontWeight: 500,
+                }}
+              >
+                Sector: {sectorFilter} ×
+              </span>
+            )}
           </div>
-          <Button variant="outline" size="sm" onClick={() => setRebalanceOpen(true)} title="Simular rebalanceo">
-            <Target size={13} /> Rebalanceo
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleRefreshPrices} disabled={refreshing}>
-            <RefreshCw size={13} style={{ animation: refreshing ? "spin 1s linear infinite" : "none" }} />
-            {refreshing ? "Actualizando..." : "Actualizar precios"}
-          </Button>
+
+          {/* Fila 2: toggle ARS/USD + valor CCL */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ display: "flex", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "6px", padding: "2px", gap: "1px" }}>
+              {(["ARS", "USD"] as Currency[]).map(c => (
+                <button key={c} onClick={() => setCurrency(c)} style={{
+                  padding: "2px 9px", fontSize: "11px", fontWeight: 700, border: "none", cursor: "pointer",
+                  borderRadius: "4px", fontFamily: "var(--font-mono)",
+                  background: currency === c ? "var(--primary)" : "transparent",
+                  color: currency === c ? "#fff" : "var(--text-3)", transition: "all 0.15s",
+                }}>{c}</button>
+              ))}
+            </div>
+            {currentCcl && (
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: "4px",
+                background: "var(--surface-2)", border: "1px solid var(--border)",
+                borderRadius: "6px", padding: "2px 8px", fontSize: "11px",
+                color: "var(--text-3)", fontFamily: "var(--font-mono)",
+              }}>
+                <DollarSign size={10} />CCL: <strong style={{ color: "var(--text-2)" }}>${fNum(currentCcl, 0)}</strong>
+              </span>
+            )}
+          </div>
+
+          {/* Fila 3: Rebalanceo + Actualizar precios */}
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Button variant="outline" size="sm" onClick={() => setRebalanceOpen(true)} title="Simular rebalanceo">
+              <Target size={13} /> Rebalanceo
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleRefreshPrices} disabled={refreshing}>
+              <RefreshCw size={13} style={{ animation: refreshing ? "spin 1s linear infinite" : "none" }} />
+              {refreshing ? "Actualizando..." : "Actualizar precios"}
+            </Button>
+          </div>
+        </div>
+
+        {/* Derecha: acciones de archivo + nueva inversión */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0, paddingTop: "2px" }}>
           <Button variant="outline" size="sm" onClick={() => exportInvestmentsTemplate()}><Download size={13} /> Plantilla</Button>
           <Button variant="outline" size="sm" onClick={() => importRef.current?.click()}><Upload size={13} /> Importar</Button>
           <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />

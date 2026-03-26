@@ -1,14 +1,16 @@
 mod commands;
 mod db;
+mod services;
 
 use tauri::Manager;
 
 use commands::{
+    accounts::{create_financial_account, delete_financial_account, get_cash_overview, get_financial_accounts, update_financial_account},
     alerts::{get_alerts, create_alert, mark_alert_read, mark_all_alerts_read, delete_alert, check_budget_alerts},
     assets::{create_asset, delete_asset, get_assets, update_asset},
     budgets::{get_budgets, upsert_budget, delete_budget},
     charts::{get_expense_breakdown, get_monthly_summary, get_installment_cashflow},
-    dashboard::get_dashboard_summary,
+    dashboard::{get_dashboard_summary, get_financial_overview},
     expenses::{create_expense, delete_expense, get_expenses, update_expense},
     goals::{create_goal, delete_goal, get_goals, update_goal_amount, update_goal_status},
     incomes::{create_income, delete_income, get_incomes, update_income},
@@ -53,6 +55,12 @@ pub fn run() {
             // Profiles
             get_profiles,
             create_profile,
+            // Accounts
+            get_financial_accounts,
+            create_financial_account,
+            update_financial_account,
+            delete_financial_account,
+            get_cash_overview,
             // Incomes
             get_incomes,
             create_income,
@@ -65,6 +73,7 @@ pub fn run() {
             delete_expense,
             // Dashboard & Charts
             get_dashboard_summary,
+            get_financial_overview,
             get_monthly_summary,
             get_expense_breakdown,
             get_installment_cashflow,

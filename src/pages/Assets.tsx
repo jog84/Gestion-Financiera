@@ -10,14 +10,14 @@ import { Select } from "@/components/ui/Select";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { InlineEditCell } from "@/components/ui/InlineEditCell";
 import { Pagination } from "@/components/ui/Pagination";
-import { getAssets, createAsset, updateAsset, deleteAsset, getNetWorthHistory, saveNetWorthSnapshot } from "@/lib/api";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { getAssets, createAsset, updateAsset, deleteAsset, getFinancialOverview, getNetWorthHistory, saveNetWorthSnapshot } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportAssetsTemplate, importAssets } from "@/lib/excel";
 import { toast } from "sonner";
 import { QK } from "@/lib/queryKeys";
-
-const PROFILE_ID = "default";
+import { useProfile } from "@/app/providers/ProfileProvider";
 
 const CAT_COLORS = ["#4361ee","#06d6a0","#fb8500","#ef233c","#4cc9f0","#a855f7","#f59e0b","#e91e63"];
 
@@ -41,6 +41,7 @@ const TH: React.CSSProperties = {
 };
 
 export function Assets() {
+  const { profileId } = useProfile();
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -56,16 +57,26 @@ export function Assets() {
   const qc = useQueryClient();
 
   const { data: assets = [], isLoading } = useQuery({
-    queryKey: QK.assets(),
-    queryFn: () => getAssets(PROFILE_ID),
+    queryKey: QK.assets(profileId),
+    queryFn: () => getAssets(profileId),
   });
 
   const { data: netWorthHistory = [] } = useQuery({
-    queryKey: QK.netWorthHistory(90),
-    queryFn: () => getNetWorthHistory(PROFILE_ID, 90),
+    queryKey: QK.netWorthHistory(profileId, 90),
+    queryFn: () => getNetWorthHistory(profileId, 90),
   });
 
-  const totalPatrimonio = assets.reduce((sum, a) => sum + a.value, 0);
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1;
+
+  const { data: overview } = useQuery({
+    queryKey: QK.financialOverview(profileId, currentYear, currentMonth),
+    queryFn: () => getFinancialOverview(profileId, currentYear, currentMonth),
+  });
+
+  const totalActivosManuales = assets.reduce((sum, a) => sum + a.value, 0);
+  const totalPatrimonio = overview?.total_assets ?? totalActivosManuales;
 
   const byCategory = assets.reduce<Record<string, number>>((acc, a) => {
     const cat = a.category ?? "otro";
@@ -83,7 +94,7 @@ export function Assets() {
   const addMutation = useMutation({
     mutationFn: () =>
       createAsset({
-        profile_id: PROFILE_ID,
+        profile_id: profileId,
         name: form.name,
         category: form.category || undefined,
         value: parseFloat(form.value.replace(",", ".")),
@@ -91,7 +102,8 @@ export function Assets() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.assets() });
+      qc.invalidateQueries({ queryKey: QK.assets(profileId) });
+      qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, currentYear, currentMonth) });
       setModalOpen(false);
       setForm({ name: "", category: "", value: "", snapshot_date: new Date().toISOString().split("T")[0], notes: "" });
       toast.success("Activo registrado correctamente");
@@ -102,7 +114,8 @@ export function Assets() {
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateAsset>[1] }) =>
       updateAsset(id, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.assets() });
+      qc.invalidateQueries({ queryKey: QK.assets(profileId) });
+      qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, currentYear, currentMonth) });
       toast.success("Activo actualizado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -111,16 +124,17 @@ export function Assets() {
   const deleteMutation = useMutation({
     mutationFn: deleteAsset,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.assets() });
+      qc.invalidateQueries({ queryKey: QK.assets(profileId) });
+      qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, currentYear, currentMonth) });
       setDeleteId(null);
       toast.success("Activo eliminado");
     },
   });
 
   const snapshotMutation = useMutation({
-    mutationFn: () => saveNetWorthSnapshot(PROFILE_ID, totalPatrimonio),
+    mutationFn: () => saveNetWorthSnapshot(profileId, totalPatrimonio),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.netWorthHistory(90) });
+      qc.invalidateQueries({ queryKey: QK.netWorthHistory(profileId, 90) });
       toast.success("Snapshot de patrimonio guardado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -136,10 +150,10 @@ export function Assets() {
       if (rows.length === 0) { toast.error("No se encontraron filas válidas en el archivo"); return; }
       let ok = 0;
       for (const r of rows) {
-        await createAsset({ profile_id: PROFILE_ID, name: r.name, category: r.category || undefined, value: r.value, snapshot_date: r.snapshot_date, notes: r.notes || undefined });
+        await createAsset({ profile_id: profileId, name: r.name, category: r.category || undefined, value: r.value, snapshot_date: r.snapshot_date, notes: r.notes || undefined });
         ok++;
       }
-      qc.invalidateQueries({ queryKey: QK.assets() });
+      qc.invalidateQueries({ queryKey: QK.assets(profileId) });
       toast.success(`${ok} activo(s) importado(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");
@@ -149,37 +163,46 @@ export function Assets() {
 
   return (
     <div style={{ padding: "28px 32px", maxWidth: "1400px" }}>
-      <div className="animate-fade-in-up" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
-        <div>
-          <h1 style={{ fontSize: "20px", fontWeight: 600, color: "var(--text)", letterSpacing: "-0.01em" }}>Patrimonio</h1>
-          <p style={{ fontSize: "12px", color: "var(--text-3)", marginTop: "2px" }}>
+      <PageHeader
+        title="Patrimonio"
+        description={
+          <>
             Patrimonio total:{" "}
-            <span style={{ color: "var(--primary)", fontWeight: 600, fontFamily: "var(--font-mono)" }}>{formatCurrency(totalPatrimonio)}</span>
-          </p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Button variant="outline" size="xs" onClick={() => snapshotMutation.mutate()} disabled={assets.length === 0 || snapshotMutation.isPending}>
-            <Save size={11} /> Guardar snapshot
-          </Button>
-          <Button variant="outline" size="xs" onClick={() => exportAssetsTemplate()}>
-            <Download size={11} /> Descargar plantilla
-          </Button>
-          <Button variant="outline" size="xs" onClick={() => importRef.current?.click()}>
-            <Upload size={11} /> Importar
-          </Button>
-          <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
-          <Button size="xs" onClick={() => setModalOpen(true)}>
-            <Plus size={12} />
-            Nuevo activo
-          </Button>
-        </div>
-      </div>
+            <span style={{ color: "var(--primary)", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+              {formatCurrency(totalPatrimonio)}
+            </span>
+            {overview && (
+              <span style={{ color: "var(--text-3)" }}>
+                {" · "}Activos manuales: {formatCurrency(totalActivosManuales)}
+              </span>
+            )}
+          </>
+        }
+        actions={
+          <>
+            <Button variant="outline" size="xs" onClick={() => snapshotMutation.mutate()} disabled={totalPatrimonio <= 0 || snapshotMutation.isPending}>
+              <Save size={11} /> Guardar snapshot
+            </Button>
+            <Button variant="outline" size="xs" onClick={() => exportAssetsTemplate()}>
+              <Download size={11} /> Descargar plantilla
+            </Button>
+            <Button variant="outline" size="xs" onClick={() => importRef.current?.click()}>
+              <Upload size={11} /> Importar
+            </Button>
+            <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
+            <Button size="xs" onClick={() => setModalOpen(true)}>
+              <Plus size={12} />
+              Nuevo activo
+            </Button>
+          </>
+        }
+      />
 
       {/* Net worth history chart */}
       {chartData.length >= 2 && (
         <Card className="animate-fade-in-up delay-100" style={{ padding: "20px", marginBottom: "20px" }}>
           <p style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-2)", marginBottom: "12px", fontFamily: "var(--font-ui)" }}>
-            Evolución del patrimonio (últimos 90 días)
+            Evolución del patrimonio guardado (últimos 90 días)
           </p>
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
@@ -202,6 +225,39 @@ export function Assets() {
         </Card>
       )}
 
+      {overview && (
+        <div className="animate-fade-in-up delay-100" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "12px", marginBottom: "16px" }}>
+          {[
+            {
+              label: "Liquidez",
+              value: formatCurrency(overview.liquid_assets),
+              sub: overview.liquidity_months !== null ? `${overview.liquidity_months.toFixed(1)} meses de cobertura` : "Sin cobertura calculable",
+            },
+            {
+              label: "Activos invertidos",
+              value: formatCurrency(overview.investment_assets),
+              sub: "Portfolio más activos de inversión",
+            },
+            {
+              label: "Activos físicos",
+              value: formatCurrency(overview.physical_assets),
+              sub: "Inmuebles, vehículos y otros",
+            },
+            {
+              label: "Gastos fijos",
+              value: formatCurrency(overview.monthly_fixed_expenses),
+              sub: "Compromisos mensuales activos",
+            },
+          ].map((item) => (
+            <Card key={item.label} style={{ padding: "16px 18px" }}>
+              <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>{item.label}</div>
+              <div style={{ fontSize: "24px", fontWeight: 700, color: "var(--text)", letterSpacing: "-0.03em", marginBottom: "6px" }}>{item.value}</div>
+              <div style={{ fontSize: "11px", color: "var(--text-3)" }}>{item.sub}</div>
+            </Card>
+          ))}
+        </div>
+      )}
+
       {/* Category summary chips */}
       {Object.keys(byCategory).length > 0 && (
         <div className="animate-fade-in-up delay-100" style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "16px" }}>
@@ -222,7 +278,7 @@ export function Assets() {
               <span style={{ textTransform: "capitalize", color: "var(--text-3)" }}>{cat}</span>
               <span style={{ fontWeight: 600, color: "var(--text)", fontFamily: "var(--font-mono)" }}>{formatCurrency(val)}</span>
               <span style={{ fontSize: "11px", color: "var(--text-3)" }}>
-                {totalPatrimonio > 0 ? ((val / totalPatrimonio) * 100).toFixed(0) : 0}%
+                {totalActivosManuales > 0 ? ((val / totalActivosManuales) * 100).toFixed(0) : 0}%
               </span>
             </div>
           ))}
@@ -247,7 +303,7 @@ export function Assets() {
               <PiggyBank size={24} style={{ color: "var(--text-3)" }} />
             </div>
             <p style={{ fontSize: "14px", fontWeight: 500, color: "var(--text-2)" }}>No tienes activos registrados</p>
-            <p style={{ fontSize: "13px", maxWidth: "300px", textAlign: "center", marginBottom: "8px" }}>Calcula tu patrimonio neto agregando tus cuentas, vehículos o inmuebles.</p>
+            <p style={{ fontSize: "13px", maxWidth: "300px", textAlign: "center", marginBottom: "8px" }}>Carga efectivo, inmuebles, vehículos u otros activos para completar tu patrimonio real.</p>
             <Button onClick={() => setModalOpen(true)}>
               <Plus size={14} />
               Nuevo activo
@@ -318,7 +374,7 @@ export function Assets() {
                       />
                     </td>
                     <td style={{ padding: "6px 16px", textAlign: "right", fontSize: "12px", color: "var(--text-3)", fontFamily: "var(--font-mono)", width: "80px" }}>
-                      {totalPatrimonio > 0 ? ((asset.value / totalPatrimonio) * 100).toFixed(1) : 0}%
+                      {totalActivosManuales > 0 ? ((asset.value / totalActivosManuales) * 100).toFixed(1) : 0}%
                     </td>
                     <td style={{ padding: "6px 16px", textAlign: "right" }}>
                       <button
@@ -372,3 +428,5 @@ export function Assets() {
     </div>
   );
 }
+
+

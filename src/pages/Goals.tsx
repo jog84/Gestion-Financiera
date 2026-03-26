@@ -12,8 +12,7 @@ import { exportGoalsTemplate, importGoals } from "@/lib/excel";
 import { toast } from "sonner";
 import type { GoalEntry } from "@/types";
 import { QK } from "@/lib/queryKeys";
-
-const PROFILE_ID = "default";
+import { useProfile } from "@/app/providers/ProfileProvider";
 
 function ProgressBar({ value, max, milestonesPct = [] }: { value: number; max: number; milestonesPct?: number[] }) {
   const pct = Math.min(100, max > 0 ? (value / max) * 100 : 0);
@@ -47,7 +46,7 @@ function ProgressBar({ value, max, milestonesPct = [] }: { value: number; max: n
   );
 }
 
-function GoalMilestones({ goal, pct }: { goal: GoalEntry; pct: number }) {
+function GoalMilestones({ goal, pct, profileId }: { goal: GoalEntry; pct: number; profileId: string }) {
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -59,7 +58,7 @@ function GoalMilestones({ goal, pct }: { goal: GoalEntry; pct: number }) {
   });
 
   const addMutation = useMutation({
-    mutationFn: () => createMilestone(goal.id, PROFILE_ID, newLabel.trim(), parseFloat(newPct)),
+    mutationFn: () => createMilestone(goal.id, profileId, newLabel.trim(), parseFloat(newPct)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QK.milestones(goal.id) });
       setAdding(false);
@@ -145,6 +144,7 @@ function GoalMilestones({ goal, pct }: { goal: GoalEntry; pct: number }) {
 }
 
 export function Goals() {
+  const { profileId } = useProfile();
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -161,14 +161,14 @@ export function Goals() {
   const now = new Date();
 
   const { data: goals = [], isLoading } = useQuery({
-    queryKey: QK.goals(),
-    queryFn: () => getGoals(PROFILE_ID),
+    queryKey: QK.goals(profileId),
+    queryFn: () => getGoals(profileId),
   });
 
   // Ahorro mensual promedio de los últimos 6 meses para proyectar fechas de cumplimiento
   const { data: monthlySummary = [] } = useQuery({
-    queryKey: QK.monthlySummary(6),
-    queryFn: () => getMonthlySummary(PROFILE_ID, 6),
+    queryKey: QK.monthlySummary(profileId, 6),
+    queryFn: () => getMonthlySummary(profileId, 6),
   });
 
   const avgMonthlySavings = monthlySummary.length > 0
@@ -178,7 +178,7 @@ export function Goals() {
   const addMutation = useMutation({
     mutationFn: () =>
       createGoal({
-        profile_id: PROFILE_ID,
+        profile_id: profileId,
         name: form.name,
         target_amount: parseFloat(form.target_amount.replace(",", ".")),
         current_amount: parseFloat(form.current_amount.replace(",", ".")) || 0,
@@ -186,7 +186,7 @@ export function Goals() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.goals() });
+      qc.invalidateQueries({ queryKey: QK.goals(profileId) });
       setModalOpen(false);
       setForm({ name: "", target_amount: "", current_amount: "0", target_date: "", notes: "" });
       toast.success("Objetivo registrado correctamente");
@@ -201,7 +201,7 @@ export function Goals() {
       return newMilestones;
     },
     onSuccess: (newMilestones, { id }) => {
-      qc.invalidateQueries({ queryKey: QK.goals() });
+      qc.invalidateQueries({ queryKey: QK.goals(profileId) });
       qc.invalidateQueries({ queryKey: QK.milestones(id) });
       setEditingId(null);
       if (newMilestones.length > 0) {
@@ -215,7 +215,7 @@ export function Goals() {
   const deleteMutation = useMutation({
     mutationFn: deleteGoal,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.goals() });
+      qc.invalidateQueries({ queryKey: QK.goals(profileId) });
       setDeleteId(null);
       toast.success("Objetivo eliminado");
     },
@@ -232,10 +232,10 @@ export function Goals() {
       if (rows.length === 0) { toast.error("No se encontraron filas válidas en el archivo"); return; }
       let ok = 0;
       for (const r of rows) {
-        await createGoal({ profile_id: PROFILE_ID, name: r.name, target_amount: r.target_amount, current_amount: r.current_amount, target_date: r.target_date || undefined, notes: r.notes || undefined });
+        await createGoal({ profile_id: profileId, name: r.name, target_amount: r.target_amount, current_amount: r.current_amount, target_date: r.target_date || undefined, notes: r.notes || undefined });
         ok++;
       }
-      qc.invalidateQueries({ queryKey: QK.goals() });
+      qc.invalidateQueries({ queryKey: QK.goals(profileId) });
       toast.success(`${ok} objetivo(s) importado(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");
@@ -396,7 +396,7 @@ export function Goals() {
                   </span>
                 </div>
 
-                <GoalMilestones goal={goal} pct={pct} />
+                <GoalMilestones goal={goal} pct={pct} profileId={profileId} />
               </div>
             );
           })}
@@ -430,3 +430,6 @@ export function Goals() {
     </div>
   );
 }
+
+
+

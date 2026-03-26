@@ -2,9 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   UserProfile, IncomeEntry, ExpenseEntry, DashboardSummary,
   IncomeSource, ExpenseCategory, InstallmentEntry, InvestmentEntry,
-  AssetSnapshot, GoalEntry, PortfolioSnapshot,
+  AssetSnapshot, FinancialAccount, CashOverview, GoalEntry, PortfolioSnapshot,
   RecurringTransaction, AppliedRecurring, CategoryBudget,
-  Alert, NetWorthPoint, GoalMilestone, CustomTheme,
+  Alert, NetWorthPoint, GoalMilestone, CustomTheme, FinancialOverview,
   YoyComparison, InstallmentCashflowPoint,
 } from "@/types";
 
@@ -21,6 +21,7 @@ export const getIncomes = (profileId: string, year: number, month: number) =>
 
 export const createIncome = (payload: {
   profile_id: string;
+  account_id?: string;
   source_id?: string;
   amount: number;
   transaction_date: string;
@@ -29,6 +30,7 @@ export const createIncome = (payload: {
 }) => invoke<IncomeEntry>("create_income", { payload });
 
 export const updateIncome = (id: string, payload: {
+  account_id?: string | null;
   source_id?: string | null;
   amount: number;
   transaction_date: string;
@@ -45,6 +47,7 @@ export const getExpenses = (profileId: string, year: number, month: number) =>
 
 export const createExpense = (payload: {
   profile_id: string;
+  account_id?: string;
   category_id?: string;
   amount: number;
   transaction_date: string;
@@ -55,6 +58,7 @@ export const createExpense = (payload: {
 }) => invoke<ExpenseEntry>("create_expense", { payload });
 
 export const updateExpense = (id: string, payload: {
+  account_id?: string | null;
   category_id?: string | null;
   amount: number;
   transaction_date: string;
@@ -70,6 +74,9 @@ export const deleteExpense = (id: string) => invoke<void>("delete_expense", { id
 
 export const getDashboardSummary = (profileId: string, year: number, month: number) =>
   invoke<DashboardSummary>("get_dashboard_summary", { profileId, year, month });
+
+export const getFinancialOverview = (profileId: string, year: number, month: number) =>
+  invoke<FinancialOverview>("get_financial_overview", { profileId, year, month });
 
 export interface MonthlySummary { year: number; month: number; total_income: number; total_expenses: number; }
 export interface CategoryBreakdown { category_id: string | null; category_name: string; total: number; }
@@ -114,6 +121,7 @@ export const getInstallments = (profileId: string) =>
 
 export const createInstallment = (payload: {
   profile_id: string;
+  account_id?: string | null;
   description: string;
   total_amount: number;
   installment_count: number;
@@ -185,6 +193,39 @@ export const updateAsset = (id: string, payload: {
 }) => invoke<AssetSnapshot>("update_asset", { id, payload });
 
 export const deleteAsset = (id: string) => invoke<void>("delete_asset", { id });
+
+// ── Accounts & Cash ───────────────────────────────────────────────────────────
+
+export const getFinancialAccounts = (profileId: string) =>
+  invoke<FinancialAccount[]>("get_financial_accounts", { profileId });
+
+export const createFinancialAccount = (payload: {
+  profile_id: string;
+  name: string;
+  institution?: string | null;
+  account_type: string;
+  currency_code: string;
+  current_balance: number;
+  is_liquid: boolean;
+  include_in_net_worth: boolean;
+  notes?: string | null;
+}) => invoke<FinancialAccount>("create_financial_account", { payload });
+
+export const updateFinancialAccount = (id: string, payload: {
+  name: string;
+  institution?: string | null;
+  account_type: string;
+  currency_code: string;
+  current_balance: number;
+  is_liquid: boolean;
+  include_in_net_worth: boolean;
+  notes?: string | null;
+}) => invoke<FinancialAccount>("update_financial_account", { id, payload });
+
+export const deleteFinancialAccount = (id: string) => invoke<void>("delete_financial_account", { id });
+
+export const getCashOverview = (profileId: string) =>
+  invoke<CashOverview>("get_cash_overview", { profileId });
 
 // ── Goals ─────────────────────────────────────────────────────────────────────
 
@@ -258,6 +299,7 @@ export const getRecurringTransactions = (profileId: string) =>
 export const createRecurringTransaction = (payload: {
   profile_id: string;
   kind: string;
+  account_id?: string | null;
   source_id?: string | null;
   category_id?: string | null;
   amount: number;
@@ -273,6 +315,7 @@ export const createRecurringTransaction = (payload: {
 export const updateRecurringTransaction = (id: string, payload: {
   profile_id: string;
   kind: string;
+  account_id?: string | null;
   source_id?: string | null;
   category_id?: string | null;
   amount: number;

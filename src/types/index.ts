@@ -29,6 +29,8 @@ export interface IncomeEntry {
   id: string;
   profile_id: string;
   period_id: string;
+  account_id: string | null;
+  account_name?: string | null;
   source_id: string | null;
   source_name?: string;
   amount: number;
@@ -52,6 +54,8 @@ export interface ExpenseEntry {
   id: string;
   profile_id: string;
   period_id: string;
+  account_id: string | null;
+  account_name?: string | null;
   category_id: string | null;
   category_name?: string;
   amount: number;
@@ -67,6 +71,8 @@ export interface ExpenseEntry {
 export interface InstallmentEntry {
   id: string;
   profile_id: string;
+  account_id: string | null;
+  account_name: string | null;
   provider_id: string | null;
   provider_name: string | null;
   description: string;
@@ -120,6 +126,27 @@ export interface AssetSnapshot {
   notes: string | null;
 }
 
+export interface FinancialAccount {
+  id: string;
+  profile_id: string;
+  name: string;
+  institution: string | null;
+  account_type: string;
+  currency_code: string;
+  current_balance: number;
+  is_liquid: boolean;
+  include_in_net_worth: boolean;
+  notes: string | null;
+}
+
+export interface CashOverview {
+  total_balance: number;
+  liquid_balance: number;
+  non_liquid_balance: number;
+  account_count: number;
+  liquid_account_count: number;
+}
+
 export interface GoalEntry {
   id: string;
   profile_id: string;
@@ -139,6 +166,21 @@ export interface DashboardSummary {
   year: number;
 }
 
+export interface FinancialOverview {
+  year: number;
+  month: number;
+  total_income: number;
+  total_expenses: number;
+  balance: number;
+  savings_rate: number;
+  total_assets: number;
+  liquid_assets: number;
+  investment_assets: number;
+  physical_assets: number;
+  monthly_fixed_expenses: number;
+  liquidity_months: number | null;
+}
+
 // ── Recurring transactions ────────────────────────────────────────────────────
 
 export type RecurringFrequency = 'monthly' | 'weekly' | 'biweekly' | 'yearly';
@@ -147,6 +189,8 @@ export interface RecurringTransaction {
   id: string;
   profile_id: string;
   kind: 'income' | 'expense';
+  account_id: string | null;
+  account_name: string | null;
   source_id: string | null;
   source_name: string | null;
   category_id: string | null;

@@ -9,13 +9,12 @@ import {
 } from "recharts";
 import { MonthSelector } from "@/components/MonthSelector";
 import {
-  getDashboardSummary, getMonthlySummary, getExpenseBreakdown, getRecentTransactions,
-  getRecurringTransactions,
+  getFinancialOverview, getMonthlySummary, getExpenseBreakdown, getRecentTransactions,
 } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { QK } from "@/lib/queryKeys";
+import { useProfile } from "@/app/providers/ProfileProvider";
 
-const PROFILE_ID  = "default";
 const MONTH_NAMES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 const CAT_COLORS  = ["#2563eb", "#10b981", "#0ea5e9", "#6366f1", "#8b5cf6", "#f59e0b", "#ec4899", "#14b8a6"];
 
@@ -175,26 +174,25 @@ function ChartTip({ active, payload, label }: { active?: boolean; payload?: { va
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
+  const { profileId } = useProfile();
   const navigate = useNavigate();
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
-  const { data: summary,        isLoading: ls } = useQuery({ queryKey: QK.dashboard(year, month),    queryFn: () => getDashboardSummary(PROFILE_ID, year, month) });
-  const { data: monthly = [],    isLoading: lm } = useQuery({ queryKey: QK.monthlySummary(6),          queryFn: () => getMonthlySummary(PROFILE_ID, 6) });
-  const { data: breakdown = [],  isLoading: lb } = useQuery({ queryKey: QK.expenseBreakdown(year, month), queryFn: () => getExpenseBreakdown(PROFILE_ID, year, month) });
-  const { data: recent = [],     isLoading: lr } = useQuery({ queryKey: QK.recentTx(8),               queryFn: () => getRecentTransactions(PROFILE_ID, 8) });
-  const { data: recurring = [] }                 = useQuery({ queryKey: QK.recurring(),                queryFn: () => getRecurringTransactions(PROFILE_ID), staleTime: 60_000 });
+  const { data: overview,       isLoading: ls } = useQuery({ queryKey: QK.financialOverview(profileId, year, month), queryFn: () => getFinancialOverview(profileId, year, month) });
+  const { data: monthly = [],    isLoading: lm } = useQuery({ queryKey: QK.monthlySummary(profileId, 6),          queryFn: () => getMonthlySummary(profileId, 6) });
+  const { data: breakdown = [],  isLoading: lb } = useQuery({ queryKey: QK.expenseBreakdown(profileId, year, month), queryFn: () => getExpenseBreakdown(profileId, year, month) });
+  const { data: recent = [],     isLoading: lr } = useQuery({ queryKey: QK.recentTx(profileId, 8),               queryFn: () => getRecentTransactions(profileId, 8) });
 
-  // Compromisos fijos mensuales activos (para sub-label del balance)
-  const monthlyFixed = recurring
-    .filter(t => t.is_active && t.kind === "expense" && t.frequency === "monthly")
-    .reduce((s, t) => s + t.amount, 0);
-
-  const income      = summary?.total_income   ?? 0;
-  const expenses    = summary?.total_expenses ?? 0;
-  const balance     = summary?.balance        ?? 0;
-  const savingsRate = income > 0 ? (balance / income) * 100 : 0;
+  const income         = overview?.total_income ?? 0;
+  const expenses       = overview?.total_expenses ?? 0;
+  const balance        = overview?.balance ?? 0;
+  const savingsRate    = overview?.savings_rate ?? 0;
+  const totalAssets    = overview?.total_assets ?? 0;
+  const liquidAssets   = overview?.liquid_assets ?? 0;
+  const liquidityMonths = overview?.liquidity_months ?? null;
+  const monthlyFixed   = overview?.monthly_fixed_expenses ?? 0;
 
   const prevDate = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
   const prevM    = monthly.find(m => m.year === prevDate.year && m.month === prevDate.month);
@@ -262,9 +260,9 @@ export function Dashboard() {
       </div>
 
       {/* KPI row */}
-      <div className="animate-fade-in-up" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "14px" }}>
+      <div className="animate-fade-in-up" style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "12px", marginBottom: "14px" }}>
         {ls ? (
-          <><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /></>
+          <><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /></>
         ) : (
           <>
             <KpiCard
@@ -296,6 +294,12 @@ export function Dashboard() {
               }
             />
             <KpiCard
+              label="Patrimonio estimado"
+              value={formatCurrency(totalAssets)}
+              badge={<Pill color="var(--primary)" bg="rgba(67,97,238,0.12)">Total</Pill>}
+              sub={liquidAssets > 0 ? `Liquidez disponible: ${formatCurrency(liquidAssets)}` : "Sin colchón líquido cargado"}
+            />
+            <KpiCard
               label="Tasa de ahorro"
               value={`${savingsRate.toFixed(1)}%`}
               badge={
@@ -306,6 +310,20 @@ export function Dashboard() {
                     : <Pill color="var(--text-3)" bg="var(--surface-3)">Sin ahorro</Pill>
               }
               sub="Meta: 20% del ingreso"
+            />
+            <KpiCard
+              label="Cobertura de liquidez"
+              value={liquidityMonths !== null ? `${liquidityMonths.toFixed(1)}m` : "N/D"}
+              badge={
+                liquidityMonths === null
+                  ? <Pill color="var(--text-3)" bg="var(--surface-3)">Sin base</Pill>
+                  : liquidityMonths >= 6
+                    ? <Pill color="var(--success)" bg="var(--success-dim)">Sólida</Pill>
+                    : liquidityMonths >= 3
+                      ? <Pill color="var(--warning)" bg="var(--warning-dim)">Media</Pill>
+                      : <Pill color="var(--danger)" bg="var(--danger-dim)">Baja</Pill>
+              }
+              sub={monthlyFixed > 0 ? `Fijos mensuales: ${formatCurrency(monthlyFixed)}` : "Sin gastos fijos activos"}
             />
           </>
         )}
@@ -515,3 +533,5 @@ export function Dashboard() {
     </div>
   );
 }
+
+

@@ -10,14 +10,13 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import {
   getRecurringTransactions, createRecurringTransaction, updateRecurringTransaction,
   deleteRecurringTransaction, toggleRecurringActive, applyDueRecurring,
-  getIncomeSources, getExpenseCategories,
+  getIncomeSources, getExpenseCategories, getFinancialAccounts,
 } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import { QK } from "@/lib/queryKeys";
-
-const PROFILE_ID = "default";
+import { useProfile } from "@/app/providers/ProfileProvider";
 
 const FREQUENCY_OPTIONS = [
   { value: "monthly", label: "Mensual" },
@@ -45,6 +44,7 @@ const TH: React.CSSProperties = {
 
 const emptyForm = {
   kind: "expense" as "income" | "expense",
+  account_id: "",
   source_id: "",
   category_id: "",
   amount: "",
@@ -58,6 +58,7 @@ const emptyForm = {
 };
 
 export function Recurring() {
+  const { profileId } = useProfile();
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -66,22 +67,35 @@ export function Recurring() {
   const qc = useQueryClient();
 
   const { data: recurring = [], isLoading } = useQuery({
-    queryKey: QK.recurring(),
-    queryFn: () => getRecurringTransactions(PROFILE_ID),
+    queryKey: QK.recurring(profileId),
+    queryFn: () => getRecurringTransactions(profileId),
   });
 
   const { data: sources = [] } = useQuery({
-    queryKey: QK.incomeSources(),
-    queryFn: () => getIncomeSources(PROFILE_ID),
+    queryKey: QK.incomeSources(profileId),
+    queryFn: () => getIncomeSources(profileId),
   });
 
   const { data: categories = [] } = useQuery({
-    queryKey: QK.expenseCategories(),
-    queryFn: () => getExpenseCategories(PROFILE_ID),
+    queryKey: QK.expenseCategories(profileId),
+    queryFn: () => getExpenseCategories(profileId),
+  });
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: QK.financialAccounts(profileId),
+    queryFn: () => getFinancialAccounts(profileId),
   });
 
   const sourceOptions = sources.map((s) => ({ value: s.id, label: s.name }));
   const categoryOptions = categories.map((c) => ({ value: c.id, label: c.name }));
+  const accountOptions = accounts.map((a) => ({ value: a.id, label: `${a.name}${a.institution ? ` · ${a.institution}` : ""}` }));
+
+  const invalidateFinancialState = () => {
+    qc.invalidateQueries({ queryKey: QK.recurring(profileId) });
+    qc.invalidateQueries({ queryKey: QK.financialAccounts(profileId) });
+    qc.invalidateQueries({ queryKey: QK.cashOverview(profileId) });
+    qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, new Date().getFullYear(), new Date().getMonth() + 1) });
+  };
 
   const openNew = () => {
     setEditItem(null);
@@ -95,6 +109,7 @@ export function Recurring() {
     setEditItem(id);
     setForm({
       kind: item.kind as "income" | "expense",
+      account_id: item.account_id ?? "",
       source_id: item.source_id ?? "",
       category_id: item.category_id ?? "",
       amount: String(item.amount),
@@ -112,8 +127,9 @@ export function Recurring() {
   const addMutation = useMutation({
     mutationFn: () =>
       createRecurringTransaction({
-        profile_id: PROFILE_ID,
+        profile_id: profileId,
         kind: form.kind,
+        account_id: form.account_id || null,
         source_id: form.source_id || null,
         category_id: form.category_id || null,
         amount: parseFloat(form.amount.replace(",", ".")),
@@ -126,7 +142,7 @@ export function Recurring() {
         next_due_date: form.next_due_date,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.recurring() });
+      invalidateFinancialState();
       setModalOpen(false);
       setForm(emptyForm);
       toast.success("Transacción recurrente creada");
@@ -137,8 +153,9 @@ export function Recurring() {
   const updateMutation = useMutation({
     mutationFn: () =>
       updateRecurringTransaction(editItem!, {
-        profile_id: PROFILE_ID,
+        profile_id: profileId,
         kind: form.kind,
+        account_id: form.account_id || null,
         source_id: form.source_id || null,
         category_id: form.category_id || null,
         amount: parseFloat(form.amount.replace(",", ".")),
@@ -151,7 +168,7 @@ export function Recurring() {
         next_due_date: form.next_due_date,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.recurring() });
+      invalidateFinancialState();
       setModalOpen(false);
       setEditItem(null);
       toast.success("Transacción recurrente actualizada");
@@ -162,7 +179,7 @@ export function Recurring() {
   const deleteMutation = useMutation({
     mutationFn: deleteRecurringTransaction,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.recurring() });
+      invalidateFinancialState();
       setDeleteId(null);
       toast.success("Transacción recurrente eliminada");
     },
@@ -170,13 +187,13 @@ export function Recurring() {
 
   const toggleMutation = useMutation({
     mutationFn: toggleRecurringActive,
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.recurring() }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.recurring(profileId) }),
   });
 
   const applyMutation = useMutation({
-    mutationFn: () => applyDueRecurring(PROFILE_ID, new Date().toISOString().split("T")[0]),
+    mutationFn: () => applyDueRecurring(profileId, new Date().toISOString().split("T")[0]),
     onSuccess: (applied) => {
-      qc.invalidateQueries({ queryKey: QK.recurring() });
+      invalidateFinancialState();
       qc.invalidateQueries({ queryKey: ["incomes"] });
       qc.invalidateQueries({ queryKey: ["expenses"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -193,7 +210,6 @@ export function Recurring() {
 
   return (
     <div style={{ padding: "28px 32px", maxWidth: "1200px" }}>
-      {/* Header */}
       <div className="animate-fade-in-up" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
         <div>
           <h1 style={{ fontSize: "20px", fontWeight: 600, color: "var(--text)", letterSpacing: "-0.01em" }}>Recurrentes</h1>
@@ -242,6 +258,7 @@ export function Recurring() {
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 <th style={TH}>Tipo</th>
                 <th style={TH}>Descripción</th>
+                <th style={TH}>Cuenta</th>
                 <th style={TH}>Categoría / Fuente</th>
                 <th style={TH}>Frecuencia</th>
                 <th style={TH}>Próxima fecha</th>
@@ -272,9 +289,10 @@ export function Recurring() {
                     {item.description ?? "—"}
                   </td>
                   <td style={{ padding: "10px 16px", fontSize: "12px", color: "var(--text-3)" }}>
-                    {item.kind === "income"
-                      ? (item.source_name ?? "—")
-                      : (item.category_name ?? "—")}
+                    {item.account_name ?? "—"}
+                  </td>
+                  <td style={{ padding: "10px 16px", fontSize: "12px", color: "var(--text-3)" }}>
+                    {item.kind === "income" ? (item.source_name ?? "—") : (item.category_name ?? "—")}
                   </td>
                   <td style={{ padding: "10px 16px", fontSize: "12px", color: "var(--text-3)" }}>
                     {FREQ_LABELS[item.frequency] ?? item.frequency}
@@ -312,7 +330,6 @@ export function Recurring() {
         )}
       </Card>
 
-      {/* Modal */}
       <Modal open={modalOpen} onClose={() => { setModalOpen(false); setEditItem(null); }} title={editItem ? "Editar recurrente" : "Nueva transacción recurrente"}>
         <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           <Select
@@ -322,6 +339,9 @@ export function Recurring() {
             onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as "income" | "expense", source_id: "", category_id: "" }))}
           />
           <Input label="Monto *" type="text" inputMode="decimal" placeholder="0.00" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} />
+          {accountOptions.length > 0 && (
+            <Select label="Cuenta" placeholder="Sin imputar" options={accountOptions} value={form.account_id} onChange={(e) => setForm((f) => ({ ...f, account_id: e.target.value }))} />
+          )}
           {form.kind === "income" && sourceOptions.length > 0 && (
             <Select label="Fuente" placeholder="Sin fuente" options={sourceOptions} value={form.source_id} onChange={(e) => setForm((f) => ({ ...f, source_id: e.target.value }))} />
           )}

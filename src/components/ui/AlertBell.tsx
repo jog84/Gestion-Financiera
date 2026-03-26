@@ -4,9 +4,8 @@ import { Bell, X, AlertCircle, AlertTriangle, Info, Target } from "lucide-react"
 import { useNavigate } from "react-router-dom";
 import { getAlerts, markAlertRead, markAllAlertsRead, deleteAlert } from "@/lib/api";
 import type { Alert, AlertKind } from "@/types";
-
-const PROFILE_ID = "default";
-
+import { useProfile } from "@/app/providers/ProfileProvider";
+import { QK } from "@/lib/queryKeys";
 function alertIcon(kind: AlertKind) {
   if (kind === "budget_exceeded") return <AlertCircle size={14} style={{ color: "var(--danger)", flexShrink: 0 }} />;
   if (kind === "budget_warning") return <AlertTriangle size={14} style={{ color: "var(--warning)", flexShrink: 0 }} />;
@@ -34,14 +33,15 @@ function timeAgo(dateStr: string): string {
 }
 
 export function AlertBell() {
+  const { profileId } = useProfile();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
 
   const { data: alerts = [] } = useQuery({
-    queryKey: ["alerts", PROFILE_ID],
-    queryFn: () => getAlerts(PROFILE_ID, false),
+    queryKey: QK.alerts(profileId, false),
+    queryFn: () => getAlerts(profileId, false),
     refetchInterval: 60_000,
   });
 
@@ -49,17 +49,17 @@ export function AlertBell() {
 
   const readMutation = useMutation({
     mutationFn: markAlertRead,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts", profileId] }),
   });
 
   const readAllMutation = useMutation({
-    mutationFn: () => markAllAlertsRead(PROFILE_ID),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
+    mutationFn: () => markAllAlertsRead(profileId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts", profileId] }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteAlert,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts", profileId] }),
   });
 
   // Close on outside click
@@ -186,3 +186,6 @@ export function AlertBell() {
     </div>
   );
 }
+
+
+

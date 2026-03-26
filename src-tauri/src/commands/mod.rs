@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod alerts;
 pub mod assets;
 pub mod budgets;

@@ -7,12 +7,13 @@ import {
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Printer } from "lucide-react";
 import { getAnnualReport, getExpenseBreakdown, getMonthlySummary, getYoyComparison } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { QK } from "@/lib/queryKeys";
+import { useProfile } from "@/app/providers/ProfileProvider";
 
-const PROFILE_ID = "default";
 const CHART_COLORS = ["#2563eb", "#10b981", "#0ea5e9", "#6366f1", "#8b5cf6", "#f59e0b", "#ec4899", "#14b8a6"];
 const now = new Date();
 
@@ -64,6 +65,7 @@ const TH: React.CSSProperties = {
 };
 
 export function Reports() {
+  const { profileId } = useProfile();
   const [tab, setTab] = useState<Tab>("expenses");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -71,27 +73,27 @@ export function Reports() {
   const [yoyYearB, setYoyYearB] = useState(now.getFullYear() - 1);
 
   const { data: annual } = useQuery({
-    queryKey: QK.annualReport(year),
-    queryFn: () => getAnnualReport(PROFILE_ID, year),
+    queryKey: QK.annualReport(profileId, year),
+    queryFn: () => getAnnualReport(profileId, year),
   });
 
   const { data: expenseBreakdown = [] } = useQuery({
-    queryKey: QK.expenseBreakdown(year, month),
-    queryFn: () => getExpenseBreakdown(PROFILE_ID, year, month),
+    queryKey: QK.expenseBreakdown(profileId, year, month),
+    queryFn: () => getExpenseBreakdown(profileId, year, month),
     enabled: tab === "expenses",
   });
 
   // NOTA: queryKey usa el mismo prefijo que Dashboard ("monthly_summary")
   // para que se invalide correctamente cuando se agregan ingresos/gastos
   const { data: incomeSummary = [] } = useQuery({
-    queryKey: QK.monthlySummary(12),
-    queryFn: () => getMonthlySummary(PROFILE_ID, 12),
+    queryKey: QK.monthlySummary(profileId, 12),
+    queryFn: () => getMonthlySummary(profileId, 12),
     enabled: tab === "incomes" || tab === "evolution",
   });
 
   const { data: yoy } = useQuery({
-    queryKey: QK.yoy(yoyYearA, yoyYearB),
-    queryFn: () => getYoyComparison(PROFILE_ID, yoyYearA, yoyYearB),
+    queryKey: QK.yoy(profileId, yoyYearA, yoyYearB),
+    queryFn: () => getYoyComparison(profileId, yoyYearA, yoyYearB),
     enabled: tab === "yoy",
   });
 
@@ -120,32 +122,35 @@ export function Reports() {
 
   return (
     <div style={{ padding: "28px 32px", maxWidth: "1400px" }}>
-      <div className="animate-fade-in-up" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
-        <h1 style={{ fontSize: "20px", fontWeight: 600, color: "var(--text)", letterSpacing: "-0.01em" }}>Reportes</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
-            <Printer size={13} /> Imprimir / PDF
-          </Button>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <button
-              onClick={() => setYear(new Date().getFullYear())}
-              style={{ padding: "5px 12px", fontSize: "12px", fontWeight: 500, color: "var(--text-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "10px", cursor: "pointer", transition: "all 0.15s", fontFamily: "var(--font-ui)" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "var(--surface-3)"; e.currentTarget.style.color = "var(--text)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.color = "var(--text-2)"; }}
-            >Este año</button>
-            <button
-              onClick={() => setYear(new Date().getFullYear() - 1)}
-              style={{ padding: "5px 12px", fontSize: "12px", fontWeight: 500, color: "var(--text-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "10px", cursor: "pointer", transition: "all 0.15s", fontFamily: "var(--font-ui)" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "var(--surface-3)"; e.currentTarget.style.color = "var(--text)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.color = "var(--text-2)"; }}
-            >Año pasado</button>
-          </div>
-          <Select options={YEAR_OPTIONS} value={String(year)} onChange={(e) => setYear(Number(e.target.value))} />
-          {(tab === "expenses" || tab === "incomes") && (
-            <Select options={MONTH_OPTIONS} value={String(month)} onChange={(e) => setMonth(Number(e.target.value))} />
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Reportes"
+        description="Compará períodos, entendé tendencias y convertí el histórico en decisiones."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer size={13} /> Imprimir / PDF
+            </Button>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <button
+                onClick={() => setYear(new Date().getFullYear())}
+                style={{ padding: "5px 12px", fontSize: "12px", fontWeight: 500, color: "var(--text-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "10px", cursor: "pointer", transition: "all 0.15s", fontFamily: "var(--font-ui)" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--surface-3)"; e.currentTarget.style.color = "var(--text)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.color = "var(--text-2)"; }}
+              >Este año</button>
+              <button
+                onClick={() => setYear(new Date().getFullYear() - 1)}
+                style={{ padding: "5px 12px", fontSize: "12px", fontWeight: 500, color: "var(--text-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "10px", cursor: "pointer", transition: "all 0.15s", fontFamily: "var(--font-ui)" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--surface-3)"; e.currentTarget.style.color = "var(--text)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.color = "var(--text-2)"; }}
+              >Año pasado</button>
+            </div>
+            <Select options={YEAR_OPTIONS} value={String(year)} onChange={(e) => setYear(Number(e.target.value))} />
+            {(tab === "expenses" || tab === "incomes") && (
+              <Select options={MONTH_OPTIONS} value={String(month)} onChange={(e) => setMonth(Number(e.target.value))} />
+            )}
+          </>
+        }
+      />
 
       {/* Tabs */}
       <div className="animate-fade-in-up delay-100" style={{ display: "flex", gap: "4px", marginBottom: "20px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "12px", padding: "4px", width: "fit-content" }}>
@@ -419,3 +424,5 @@ export function Reports() {
     </div>
   );
 }
+
+

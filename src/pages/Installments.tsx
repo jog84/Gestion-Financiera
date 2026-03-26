@@ -8,14 +8,14 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
-import { getInstallments, createInstallment, deleteInstallment, getInstallmentCashflow } from "@/lib/api";
+import { getFinancialAccounts, getInstallments, createInstallment, deleteInstallment, getInstallmentCashflow } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportInstallmentsTemplate, importInstallments } from "@/lib/excel";
 import { toast } from "sonner";
 import { QK } from "@/lib/queryKeys";
-
-const PROFILE_ID = "default";
+import { useProfile } from "@/app/providers/ProfileProvider";
+import { Select } from "@/components/ui/Select";
 
 const CAT_COLORS = ["#4361ee","#06d6a0","#fb8500","#ef233c","#4cc9f0","#a855f7","#f59e0b","#e91e63"];
 
@@ -32,17 +32,18 @@ const TH: React.CSSProperties = {
 function getInstallmentStatus(startDate: string, count: number): { label: string; variant: "success" | "warning" | "danger" | "default" } {
   const start = new Date(startDate);
   const now = new Date();
-  const monthsElapsed =
-    (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+  const monthsElapsed = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
   if (monthsElapsed >= count) return { label: "Pagado", variant: "default" };
   if (monthsElapsed >= count - 2) return { label: `${count - monthsElapsed} restantes`, variant: "warning" };
   return { label: `${count - monthsElapsed} restantes`, variant: "success" };
 }
 
 export function Installments() {
+  const { profileId } = useProfile();
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState({
+    account_id: "",
     description: "",
     total_amount: "",
     installment_count: "",
@@ -53,13 +54,18 @@ export function Installments() {
   const qc = useQueryClient();
 
   const { data: installments = [], isLoading } = useQuery({
-    queryKey: QK.installments(),
-    queryFn: () => getInstallments(PROFILE_ID),
+    queryKey: QK.installments(profileId),
+    queryFn: () => getInstallments(profileId),
+  });
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: QK.financialAccounts(profileId),
+    queryFn: () => getFinancialAccounts(profileId),
   });
 
   const { data: cashflow = [] } = useQuery({
-    queryKey: QK.installmentCf(),
-    queryFn: () => getInstallmentCashflow(PROFILE_ID, 12),
+    queryKey: QK.installmentCf(profileId),
+    queryFn: () => getInstallmentCashflow(profileId, 12),
   });
 
   const active = installments.filter((i) => {
@@ -70,11 +76,21 @@ export function Installments() {
   });
 
   const totalMonthly = active.reduce((sum, i) => sum + i.total_amount / i.installment_count, 0);
+  const accountOptions = accounts.map((a) => ({ value: a.id, label: `${a.name}${a.institution ? ` · ${a.institution}` : ""}` }));
+
+  const invalidateFinancialState = () => {
+    qc.invalidateQueries({ queryKey: QK.installments(profileId) });
+    qc.invalidateQueries({ queryKey: QK.expenses(profileId, new Date().getFullYear(), new Date().getMonth() + 1) });
+    qc.invalidateQueries({ queryKey: QK.financialAccounts(profileId) });
+    qc.invalidateQueries({ queryKey: QK.cashOverview(profileId) });
+    qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, new Date().getFullYear(), new Date().getMonth() + 1) });
+  };
 
   const addMutation = useMutation({
     mutationFn: () =>
       createInstallment({
-        profile_id: PROFILE_ID,
+        profile_id: profileId,
+        account_id: form.account_id || null,
         description: form.description,
         total_amount: parseFloat(form.total_amount.replace(",", ".")),
         installment_count: parseInt(form.installment_count.replace(",", ".")),
@@ -82,9 +98,9 @@ export function Installments() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.installments() });
+      invalidateFinancialState();
       setModalOpen(false);
-      setForm({ description: "", total_amount: "", installment_count: "", start_date: new Date().toISOString().split("T")[0], notes: "" });
+      setForm({ account_id: "", description: "", total_amount: "", installment_count: "", start_date: new Date().toISOString().split("T")[0], notes: "" });
       toast.success("Cuota registrada correctamente");
     },
   });
@@ -92,7 +108,7 @@ export function Installments() {
   const deleteMutation = useMutation({
     mutationFn: deleteInstallment,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.installments() });
+      invalidateFinancialState();
       setDeleteId(null);
       toast.success("Cuota eliminada");
     },
@@ -108,10 +124,10 @@ export function Installments() {
       if (rows.length === 0) { toast.error("No se encontraron filas válidas en el archivo"); return; }
       let ok = 0;
       for (const r of rows) {
-        await createInstallment({ profile_id: PROFILE_ID, description: r.description, total_amount: r.total_amount, installment_count: r.installment_count, start_date: r.start_date, notes: r.notes || undefined });
+        await createInstallment({ profile_id: profileId, description: r.description, total_amount: r.total_amount, installment_count: r.installment_count, start_date: r.start_date, notes: r.notes || undefined });
         ok++;
       }
-      qc.invalidateQueries({ queryKey: QK.installments() });
+      invalidateFinancialState();
       toast.success(`${ok} cuota(s) importada(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");
@@ -125,8 +141,7 @@ export function Installments() {
         <div>
           <h1 style={{ fontSize: "20px", fontWeight: 600, color: "var(--text)", letterSpacing: "-0.01em" }}>Cuotas</h1>
           <p style={{ fontSize: "12px", color: "var(--text-3)", marginTop: "2px" }}>
-            Costo mensual activo:{" "}
-            <span style={{ color: "var(--warning)", fontWeight: 600, fontFamily: "var(--font-mono)" }}>{formatCurrency(totalMonthly)}</span>
+            Costo mensual activo: <span style={{ color: "var(--warning)", fontWeight: 600, fontFamily: "var(--font-mono)" }}>{formatCurrency(totalMonthly)}</span>
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -144,7 +159,6 @@ export function Installments() {
         </div>
       </div>
 
-      {/* Cashflow chart */}
       {cashflow.length > 0 && (
         <Card className="animate-fade-in-up delay-100" style={{ padding: "20px", marginBottom: "16px" }}>
           <p style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-2)", marginBottom: "12px", fontFamily: "var(--font-ui)" }}>
@@ -157,10 +171,7 @@ export function Installments() {
               <YAxis tick={{ fontSize: 10, fill: "var(--text-3)", fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} tickFormatter={(v) => formatCurrency(v).replace(/\s/g, "")} width={80} />
               <Tooltip
                 contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "8px", fontSize: "12px", fontFamily: "var(--font-ui)" }}
-                formatter={(v, _name, props) => [
-                  `${formatCurrency(Number(v))} (${(props as { payload?: { count?: number } }).payload?.count ?? 0} cuotas)`,
-                  "Total",
-                ]}
+                formatter={(v, _name, props) => [`${formatCurrency(Number(v))} (${(props as { payload?: { count?: number } }).payload?.count ?? 0} cuotas)`, "Total"]}
               />
               <Bar dataKey="total" fill="var(--warning)" fillOpacity={0.8} radius={[3, 3, 0, 0]} maxBarSize={32} />
             </BarChart>
@@ -197,6 +208,7 @@ export function Installments() {
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 <th style={TH}>Descripción</th>
+                <th style={TH}>Cuenta</th>
                 <th style={TH}>Inicio</th>
                 <th style={{ ...TH, textAlign: "right" }}>Total</th>
                 <th style={{ ...TH, textAlign: "right" }}>Cuota/mes</th>
@@ -222,6 +234,7 @@ export function Installments() {
                         {item.description}
                       </div>
                     </td>
+                    <td style={{ padding: "10px 16px", fontSize: "12px", color: "var(--text-3)" }}>{item.account_name ?? "—"}</td>
                     <td style={{ padding: "10px 16px", fontSize: "12px", color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>{formatDate(item.start_date)}</td>
                     <td style={{ padding: "10px 16px", fontSize: "12px", color: "var(--text-2)", textAlign: "right", fontFamily: "var(--font-mono)" }}>{formatCurrency(item.total_amount)}</td>
                     <td style={{ padding: "10px 16px", textAlign: "right", fontSize: "13px", fontWeight: 600, fontFamily: "var(--font-mono)", color: "var(--warning)" }}>
@@ -251,6 +264,9 @@ export function Installments() {
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nueva cuota">
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <Input label="Descripción *" placeholder="Ej: Notebook 12 cuotas" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+          {accountOptions.length > 0 && (
+            <Select label="Cuenta" placeholder="Sin imputar" options={accountOptions} value={form.account_id} onChange={(e) => setForm((f) => ({ ...f, account_id: e.target.value }))} />
+          )}
           <Input label="Monto total *" type="text" inputMode="decimal" placeholder="0.00" value={form.total_amount} onChange={(e) => setForm((f) => ({ ...f, total_amount: e.target.value }))} />
           <Input label="Cantidad de cuotas *" type="text" inputMode="numeric" placeholder="12" value={form.installment_count} onChange={(e) => setForm((f) => ({ ...f, installment_count: e.target.value }))} />
           <Input label="Fecha de inicio *" type="date" value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} />

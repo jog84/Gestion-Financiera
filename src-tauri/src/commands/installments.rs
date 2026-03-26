@@ -3,12 +3,15 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use super::incomes::get_or_create_period;
+use crate::services::accounts::apply_account_balance_delta;
+use crate::services::periods::get_or_create_period;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct InstallmentEntry {
     pub id: String,
     pub profile_id: String,
+    pub account_id: Option<String>,
+    pub account_name: Option<String>,
     pub provider_id: Option<String>,
     pub provider_name: Option<String>,
     pub description: String,
@@ -21,6 +24,7 @@ pub struct InstallmentEntry {
 #[derive(Debug, Deserialize)]
 pub struct CreateInstallmentPayload {
     pub profile_id: String,
+    pub account_id: Option<String>,
     pub description: String,
     pub total_amount: f64,
     pub installment_count: i64,
@@ -51,11 +55,14 @@ pub async fn get_installments(
     profile_id: String,
 ) -> Result<Vec<InstallmentEntry>, String> {
     sqlx::query_as::<_, InstallmentEntry>(
-        r#"SELECT ie.id, ie.profile_id, ie.provider_id,
+        r#"SELECT ie.id, ie.profile_id, ie.account_id,
+                  fa.name AS account_name,
+                  ie.provider_id,
                   ip.name AS provider_name,
                   ie.description, ie.total_amount, ie.installment_count,
                   ie.start_date, ie.notes
            FROM installment_entries ie
+           LEFT JOIN financial_accounts fa ON ie.account_id = fa.id
            LEFT JOIN installment_providers ip ON ie.provider_id = ip.id
            WHERE ie.profile_id = ?
            ORDER BY ie.start_date DESC"#,
@@ -76,11 +83,12 @@ pub async fn create_installment(
     let monthly_amount = payload.total_amount / payload.installment_count as f64;
 
     sqlx::query(
-        "INSERT INTO installment_entries (id, profile_id, description, total_amount, installment_count, start_date, notes, origin, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?)",
+        "INSERT INTO installment_entries (id, profile_id, account_id, description, total_amount, installment_count, start_date, notes, origin, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?)",
     )
     .bind(&id)
     .bind(&payload.profile_id)
+    .bind(&payload.account_id)
     .bind(&payload.description)
     .bind(payload.total_amount)
     .bind(payload.installment_count)
@@ -96,6 +104,7 @@ pub async fn create_installment(
     let start = NaiveDate::parse_from_str(&payload.start_date, "%Y-%m-%d")
         .map_err(|_| "invalid start_date format")?;
 
+    let today = Utc::now().date_naive();
     for i in 0..payload.installment_count as i32 {
         let expense_date = add_months(start, i);
         let date_str = expense_date.format("%Y-%m-%d").to_string();
@@ -104,12 +113,13 @@ pub async fn create_installment(
         let description = format!("{} (cuota {}/{})", payload.description, i + 1, payload.installment_count);
 
         sqlx::query(
-            "INSERT INTO expense_entries (id, profile_id, period_id, amount, transaction_date, description, is_installment_derived, origin, external_ref, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, 1, 'installment', ?, ?, ?)",
+            "INSERT INTO expense_entries (id, profile_id, period_id, account_id, amount, transaction_date, description, is_installment_derived, origin, external_ref, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'installment', ?, ?, ?)",
         )
         .bind(&expense_id)
         .bind(&payload.profile_id)
         .bind(&period_id)
+        .bind(&payload.account_id)
         .bind(monthly_amount)
         .bind(&date_str)
         .bind(&description)
@@ -119,14 +129,21 @@ pub async fn create_installment(
         .execute(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
+
+        if expense_date <= today {
+            apply_account_balance_delta(pool.inner(), payload.account_id.as_deref(), -monthly_amount).await?;
+        }
     }
 
     sqlx::query_as::<_, InstallmentEntry>(
-        r#"SELECT ie.id, ie.profile_id, ie.provider_id,
+        r#"SELECT ie.id, ie.profile_id, ie.account_id,
+                  fa.name AS account_name,
+                  ie.provider_id,
                   ip.name AS provider_name,
                   ie.description, ie.total_amount, ie.installment_count,
                   ie.start_date, ie.notes
            FROM installment_entries ie
+           LEFT JOIN financial_accounts fa ON ie.account_id = fa.id
            LEFT JOIN installment_providers ip ON ie.provider_id = ip.id
            WHERE ie.id = ?"#,
     )
@@ -141,12 +158,28 @@ pub async fn delete_installment(
     pool: tauri::State<'_, SqlitePool>,
     id: String,
 ) -> Result<(), String> {
-    // Also delete derived expense entries
+    let derived_entries: Vec<(Option<String>, f64, String)> = sqlx::query_as(
+        "SELECT account_id, amount, transaction_date FROM expense_entries WHERE external_ref = ? AND is_installment_derived = 1",
+    )
+    .bind(&id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
     sqlx::query("DELETE FROM expense_entries WHERE external_ref = ? AND is_installment_derived = 1")
         .bind(&id)
         .execute(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
+
+    let today = Utc::now().date_naive();
+    for (account_id, amount, transaction_date) in derived_entries {
+        if let Ok(date) = NaiveDate::parse_from_str(&transaction_date, "%Y-%m-%d") {
+            if date <= today {
+                apply_account_balance_delta(pool.inner(), account_id.as_deref(), amount).await?;
+            }
+        }
+    }
 
     sqlx::query("DELETE FROM installment_entries WHERE id = ?")
         .bind(&id)

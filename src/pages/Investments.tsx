@@ -1,261 +1,62 @@
-import { useState, useRef, useEffect, useMemo, Fragment } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Plus, Trash2, Briefcase, Download, Upload,
-  RefreshCw, ArrowUp, ArrowDown, ArrowUpDown, DollarSign,
-  ChevronRight, Target, BarChart2,
-} from "lucide-react";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
-import { Input } from "@/components/ui/Input";
-import { ConfirmModal } from "@/components/ui/ConfirmModal";
-import { Skeleton } from "@/components/ui/Skeleton";
-import {
-  getInvestments, createInvestment, deleteInvestment,
-  fetchPrices, fetchCcl, updatePricesByTicker, updateInvestmentValue,
-  savePortfolioSnapshot, getPortfolioSnapshots, getDashboardSummary,
-} from "@/lib/api";
-import { formatDate } from "@/lib/utils";
-import { exportInvestmentsTemplate, importInvestments } from "@/lib/excel";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BarChart2, Briefcase, Download, DollarSign, Plus, RefreshCw, Target, Upload } from "lucide-react";
 import { toast } from "sonner";
-import type { InvestmentEntry, InstrumentType } from "@/types";
-
-import {
-  calcRow, getSector, calcCAGR, calcXIRR, calcPositionSignals,
-  generateSmartInsights, detectInstrumentType,
-  type CashFlow, type Signal,
-} from "@/lib/investmentCalcs";
-import { PortfolioKPIBar } from "@/components/investments/PortfolioKPIBar";
-import { PortfolioChart } from "@/components/investments/PortfolioChart";
+import { useProfile } from "@/app/providers/ProfileProvider";
 import { AllocationCharts } from "@/components/investments/AllocationCharts";
+import { generateSmartInsights, calcCAGR, calcRow, calcXIRR, getSector, type CashFlow } from "@/lib/investmentCalcs";
 import { InsightsPanel } from "@/components/investments/InsightsPanel";
+import { InvestmentFormModal } from "@/components/investments/InvestmentFormModal";
+import { PortfolioChart } from "@/components/investments/PortfolioChart";
+import { PortfolioKPIBar } from "@/components/investments/PortfolioKPIBar";
+import { PositionsTable } from "@/components/investments/PositionsTable";
 import { RebalanceModal } from "@/components/investments/RebalanceModal";
+import { TransactionsTable } from "@/components/investments/TransactionsTable";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { PageHeader } from "@/components/ui/PageHeader";
+import {
+  buildPositions,
+  createEmptyInvestmentForm,
+  fNum,
+  investmentsTabStyle,
+  p,
+  sortPositions,
+  sortTransactions,
+  type Currency,
+  type InvestmentFormState,
+  type SortDir,
+  type SortKey,
+  type TickerDetection,
+} from "@/components/investments/investmentHelpers";
+import {
+  createInvestment,
+  deleteInvestment,
+  fetchCcl,
+  fetchPrices,
+  getDashboardSummary,
+  getInvestments,
+  getPortfolioSnapshots,
+  savePortfolioSnapshot,
+  updateInvestmentValue,
+  updatePricesByTicker,
+} from "@/lib/api";
+import { exportInvestmentsTemplate, importInvestments } from "@/lib/excel";
 import { QK } from "@/lib/queryKeys";
+import type { InstrumentType, InvestmentEntry } from "@/types";
 
-const PROFILE_ID = "default";
+type InvestmentsTab = "resumen" | "transacciones";
 
-// ─── Instrument config ────────────────────────────────────────────────────────
-const INSTRUMENT_LABELS: Record<InstrumentType, string> = {
-  cedear: "CEDEAR", accion: "Acción", plazo_fijo: "Plazo Fijo",
-  bono: "Bono", fci: "FCI", crypto: "Cripto", otro: "Otro",
-};
-
-const INSTRUMENT_COLORS_HEX: Record<InstrumentType, string> = {
-  cedear: "#4361ee", accion: "#7c3aed", plazo_fijo: "#06d6a0",
-  bono: "#fb8500", fci: "#0891b2", crypto: "#f59e0b", otro: "#6b7280",
-};
-
-const INSTRUMENT_COLORS: Record<InstrumentType, string> = {
-  cedear: "var(--primary)", accion: "#7c3aed", plazo_fijo: "var(--success)",
-  bono: "var(--warning)", fci: "#0891b2", crypto: "#f59e0b", otro: "var(--text-3)",
-};
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const TH: React.CSSProperties = {
-  padding: "8px 14px", fontSize: "10px", fontWeight: 600,
-  color: "var(--text-3)", letterSpacing: "0.07em", textTransform: "uppercase",
-  textAlign: "left", whiteSpace: "nowrap", userSelect: "none",
-};
-const TD: React.CSSProperties = {
-  padding: "9px 14px", fontSize: "12px",
-  fontFamily: "var(--font-mono)", color: "var(--text-2)", whiteSpace: "nowrap",
-};
-
-type Currency = "ARS" | "USD";
-type SortDir = "asc" | "desc";
-type SortKey = "fecha" | "tipo" | "nombre" | "invertido" | "actual" | "ganancia" | "pct" | "peso";
-
-// ─── Formatting ───────────────────────────────────────────────────────────────
-function fNum(n: number, d = 2) {
-  return new Intl.NumberFormat("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
-}
-function fPct(n: number) { return (n >= 0 ? "+" : "") + n.toFixed(2) + "%"; }
-
-// ─── Enhanced Position ────────────────────────────────────────────────────────
-export interface EnhancedPosition {
-  key: string;
-  type: InstrumentType;
-  typeLabel: string;
-  typeColor: string;
-  name: string;
-  ticker: string | null;
-  sector: string;
-  ppp: number | null;
-  currentPriceArs: number | null;
-  totalQty: number;
-  invertidoArs: number; actualArs: number; gananciaArs: number;
-  invertidoUsd: number; actualUsd: number; gananciaUsd: number;
-  weightPct: number; // 0-100, based on actualArs vs total actualArs
-  count: number;
-  entries: InvestmentEntry[];
-  maturityDate: string | null;
-  signals: Signal[];
-  sectorWeight: number; // 0-1
-}
-
-/**
- * Corrige el tipo almacenado cuando fue guardado como "cedear" por defecto.
- * Usa detectInstrumentType con confianza alta para no hacer cambios agresivos.
- */
-function effectiveType(ticker: string | null | undefined, storedType: InstrumentType | null | undefined): InstrumentType {
-  const base = storedType ?? "cedear";
-  if (base !== "cedear" || !ticker) return base;
-  const detected = detectInstrumentType(ticker);
-  return detected.confidence === "high" ? detected.type : base;
-}
-
-function buildPositions(
-  invs: InvestmentEntry[],
-  totalPortfolioArs: number,
-  sectorTotals: Record<string, number>,
-  currentCcl?: number | null,
-): EnhancedPosition[] {
-  const map = new Map<string, { type: InstrumentType; name: string; ticker: string | null; entries: InvestmentEntry[] }>();
-  for (const inv of invs) {
-    const key = (inv.ticker ?? inv.name).toUpperCase();
-    const type = effectiveType(inv.ticker, inv.instrument_type);
-    const ex = map.get(key);
-    if (ex) ex.entries.push(inv);
-    else map.set(key, { type, name: inv.name, ticker: inv.ticker, entries: [inv] });
-  }
-
-  return Array.from(map.entries()).map(([key, { type, name, ticker, entries }]) => {
-    let totalQty = 0, sumQtyPrice = 0, currentPriceArs: number | null = null;
-    let invertidoArs = 0, actualArs = 0, invertidoUsd = 0, actualUsd = 0;
-    let maturityDate: string | null = null;
-
-    for (const inv of entries) {
-      const c = calcRow(inv, currentCcl);
-      invertidoArs += c.invertidoArs; actualArs += c.actualArs;
-      invertidoUsd += c.invertidoUsd; actualUsd += c.actualUsd;
-      if (inv.quantity && inv.price_ars) {
-        totalQty += inv.quantity;
-        sumQtyPrice += inv.quantity * inv.price_ars;
-        if (inv.current_price_ars) currentPriceArs = inv.current_price_ars;
-      }
-      if (inv.fecha_vencimiento) maturityDate = inv.fecha_vencimiento;
-    }
-
-    const ppp = (type === "cedear" || type === "accion" || type === "fci") && totalQty > 0
-      ? sumQtyPrice / totalQty : null;
-    const weightPct = totalPortfolioArs > 0 ? (actualArs / totalPortfolioArs) * 100 : 0;
-    const sector = getSector(ticker, type);
-    const sectorWeight = totalPortfolioArs > 0 && sectorTotals[sector]
-      ? sectorTotals[sector] / totalPortfolioArs : 0;
-    const returnPct = invertidoArs > 0 ? (actualArs - invertidoArs) / invertidoArs : 0;
-    const signals = calcPositionSignals(weightPct / 100, returnPct, sectorWeight, sector);
-
-    return {
-      key, type, typeLabel: INSTRUMENT_LABELS[type],
-      typeColor: INSTRUMENT_COLORS_HEX[type],
-      name, ticker, sector, ppp, currentPriceArs, totalQty,
-      invertidoArs, actualArs, gananciaArs: actualArs - invertidoArs,
-      invertidoUsd, actualUsd, gananciaUsd: actualUsd - invertidoUsd,
-      weightPct, count: entries.length, entries,
-      maturityDate, signals, sectorWeight,
-    };
-  }).sort((a, b) => b.actualArs - a.actualArs);
-}
-
-// ─── Sort ─────────────────────────────────────────────────────────────────────
-function sortPositions(list: EnhancedPosition[], key: SortKey | null, dir: SortDir, currency: Currency) {
-  if (!key) return list;
-  const isArs = currency === "ARS";
-  return [...list].sort((a, b) => {
-    let va = 0, vb = 0;
-    if (key === "nombre") return dir === "asc"
-      ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key);
-    if (key === "tipo") return dir === "asc"
-      ? a.type.localeCompare(b.type) : b.type.localeCompare(a.type);
-    if (key === "invertido") { va = isArs ? a.invertidoArs : a.invertidoUsd; vb = isArs ? b.invertidoArs : b.invertidoUsd; }
-    if (key === "actual") { va = isArs ? a.actualArs : a.actualUsd; vb = isArs ? b.actualArs : b.actualUsd; }
-    if (key === "ganancia") { va = isArs ? a.gananciaArs : a.gananciaUsd; vb = isArs ? b.gananciaArs : b.gananciaUsd; }
-    if (key === "pct") {
-      va = a.invertidoArs > 0 ? a.gananciaArs / a.invertidoArs : 0;
-      vb = b.invertidoArs > 0 ? b.gananciaArs / b.invertidoArs : 0;
-    }
-    if (key === "peso") { va = a.weightPct; vb = b.weightPct; }
-    return dir === "asc" ? va - vb : vb - va;
-  });
-}
-
-function sortTransactions(list: InvestmentEntry[], key: SortKey | null, dir: SortDir, currency: Currency, currentCcl?: number | null) {
-  if (!key) return list;
-  return [...list].sort((a, b) => {
-    const ra = calcRow(a, currentCcl), rb = calcRow(b, currentCcl);
-    const isArs = currency === "ARS";
-    let va = 0, vb = 0;
-    if (key === "fecha") { va = new Date(a.transaction_date).getTime(); vb = new Date(b.transaction_date).getTime(); }
-    else if (key === "tipo") return dir === "asc"
-      ? (a.instrument_type ?? "").localeCompare(b.instrument_type ?? "")
-      : (b.instrument_type ?? "").localeCompare(a.instrument_type ?? "");
-    else if (key === "nombre") return dir === "asc"
-      ? (a.ticker ?? a.name).localeCompare(b.ticker ?? b.name)
-      : (b.ticker ?? b.name).localeCompare(a.ticker ?? a.name);
-    else if (key === "invertido") { va = isArs ? ra.invertidoArs : ra.invertidoUsd; vb = isArs ? rb.invertidoArs : rb.invertidoUsd; }
-    else if (key === "actual") { va = isArs ? ra.actualArs : ra.actualUsd; vb = isArs ? rb.actualArs : rb.actualUsd; }
-    else if (key === "ganancia") { va = isArs ? ra.gananciaArs : ra.gananciaUsd; vb = isArs ? rb.gananciaArs : rb.gananciaUsd; }
-    else if (key === "pct") { va = isArs ? ra.gananciaPctArs : ra.gananciaPctUsd; vb = isArs ? rb.gananciaPctArs : rb.gananciaPctUsd; }
-    return dir === "asc" ? va - vb : vb - va;
-  });
-}
-
-function SortTH({ label, col, sortCol, sortDir, onSort, right }: {
-  label: string; col: SortKey; sortCol: SortKey | null; sortDir: SortDir;
-  onSort: (c: SortKey) => void; right?: boolean;
-}) {
-  const active = sortCol === col;
-  return (
-    <th style={{ ...TH, textAlign: right ? "right" : "left", cursor: "pointer" }} onClick={() => onSort(col)}>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-        {label}
-        {active
-          ? sortDir === "asc" ? <ArrowUp size={10} style={{ color: "var(--primary)" }} /> : <ArrowDown size={10} style={{ color: "var(--primary)" }} />
-          : <ArrowUpDown size={10} style={{ opacity: 0.35 }} />}
-      </span>
-    </th>
-  );
-}
-
-function TypeBadge({ type }: { type: InstrumentType }) {
-  return (
-    <span style={{
-      display: "inline-block", padding: "1px 7px", borderRadius: "4px", fontSize: "10px",
-      fontWeight: 700, letterSpacing: "0.05em",
-      background: INSTRUMENT_COLORS[type] + "22",
-      color: INSTRUMENT_COLORS[type],
-    }}>
-      {INSTRUMENT_LABELS[type]}
-    </span>
-  );
-}
-
-function SignalBadges({ signals }: { signals: Signal[] }) {
-  if (signals.length === 0) return <span style={{ color: "var(--text-3)", fontSize: "11px" }}>—</span>;
-  return (
-    <span style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-      {signals.map((s, i) => (
-        <span key={i} style={{
-          fontSize: "10px", padding: "1px 6px", borderRadius: "4px", fontWeight: 600,
-          background: s.level === "danger"
-            ? "color-mix(in srgb, var(--danger) 15%, transparent)"
-            : "color-mix(in srgb, var(--warning) 15%, transparent)",
-          color: s.level === "danger" ? "var(--danger)" : "var(--warning)",
-        }}>
-          {s.label}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
 export function Investments() {
+  const { profileId } = useProfile();
+  const qc = useQueryClient();
+  const importRef = useRef<HTMLInputElement>(null);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [rebalanceOpen, setRebalanceOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"resumen" | "transacciones">("resumen");
+  const [activeTab, setActiveTab] = useState<InvestmentsTab>("resumen");
   const [currency, setCurrency] = useState<Currency>("ARS");
   const [filterText, setFilterText] = useState("");
   const [sectorFilter, setSectorFilter] = useState<string | null>(null);
@@ -265,162 +66,151 @@ export function Investments() {
     const stored = parseFloat(localStorage.getItem("last_ccl") ?? "");
     return isFinite(stored) && stored > 0 ? stored : null;
   });
-  const [cclStale, setCclStale] = useState(true); // true = valor de caché, false = fresco
+  const [cclStale, setCclStale] = useState(true);
   const [instrType, setInstrType] = useState<InstrumentType>("cedear");
   const [expandedPos, setExpandedPos] = useState<string | null>(null);
-  const [tickerDetection, setTickerDetection] = useState<{
-    type: InstrumentType; confidence: "high" | "medium" | "low"; reason: string; switched: boolean;
-  } | null>(null);
-
-  const emptyForm = {
-    ticker: "", name: "", quantity: "", price_ars: "", dolar_ccl: "",
-    current_price_ars: "", transaction_date: new Date().toISOString().split("T")[0],
-    notes: "", tna: "", plazo_dias: "", fecha_vencimiento: "",
-  };
-  const [form, setForm] = useState(emptyForm);
-  const qc = useQueryClient();
+  const [tickerDetection, setTickerDetection] = useState<TickerDetection | null>(null);
+  const [form, setForm] = useState<InvestmentFormState>(createEmptyInvestmentForm);
+  const [refreshing, setRefreshing] = useState(false);
+  const [editingPrice, setEditingPrice] = useState<{ id: string; value: string } | null>(null);
 
   const { data: investments = [], isLoading } = useQuery({
-    queryKey: QK.investments(),
-    queryFn: () => getInvestments(PROFILE_ID),
+    queryKey: QK.investments(profileId),
+    queryFn: () => getInvestments(profileId),
   });
 
   const { data: snapshots = [] } = useQuery({
-    queryKey: QK.portfolioSnapshots(),
-    queryFn: () => getPortfolioSnapshots(PROFILE_ID),
+    queryKey: QK.portfolioSnapshots(profileId),
+    queryFn: () => getPortfolioSnapshots(profileId),
+  });
+
+  const { data: dashSummary } = useQuery({
+    queryKey: QK.dashboard(profileId, new Date().getFullYear(), new Date().getMonth() + 1),
+    queryFn: () => getDashboardSummary(profileId, new Date().getFullYear(), new Date().getMonth() + 1),
+    staleTime: 60_000,
   });
 
   useEffect(() => {
     fetchCcl()
-      .then(ccl => {
+      .then((ccl) => {
         setCurrentCcl(ccl);
         setCclStale(false);
         localStorage.setItem("last_ccl", String(ccl));
       })
-      .catch(() => {}); // si falla, usa el valor de localStorage
+      .catch(() => {});
   }, []);
 
-  const { data: dashSummary } = useQuery({
-    queryKey: QK.dashboard(new Date().getFullYear(), new Date().getMonth() + 1),
-    queryFn: () => getDashboardSummary(PROFILE_ID, new Date().getFullYear(), new Date().getMonth() + 1),
-    staleTime: 60_000,
-  });
-
-  const handleSort = (col: SortKey) => {
-    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortCol(col); setSortDir("desc"); }
+  const handleSort = (column: SortKey) => {
+    if (sortCol === column) setSortDir((dir) => dir === "asc" ? "desc" : "asc");
+    else {
+      setSortCol(column);
+      setSortDir("desc");
+    }
   };
 
-  // ─── Totals ──────────────────────────────────────────────────────────────────
-  const totals = useMemo(() => investments.reduce((acc, inv) => {
-    const c = calcRow(inv, currentCcl);
+  const totals = useMemo(() => investments.reduce((acc, investment) => {
+    const row = calcRow(investment, currentCcl);
     return {
-      invertidoArs: acc.invertidoArs + c.invertidoArs,
-      actualArs: acc.actualArs + c.actualArs,
-      invertidoUsd: acc.invertidoUsd + c.invertidoUsd,
-      actualUsd: acc.actualUsd + c.actualUsd,
+      invertidoArs: acc.invertidoArs + row.invertidoArs,
+      actualArs: acc.actualArs + row.actualArs,
+      invertidoUsd: acc.invertidoUsd + row.invertidoUsd,
+      actualUsd: acc.actualUsd + row.actualUsd,
     };
   }, { invertidoArs: 0, actualArs: 0, invertidoUsd: 0, actualUsd: 0 }), [investments, currentCcl]);
 
-  // ─── Sector totals (for signal calc) ─────────────────────────────────────────
   const sectorTotals = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const inv of investments) {
-      const s = getSector(inv.ticker, effectiveType(inv.ticker, inv.instrument_type));
-      const c = calcRow(inv, currentCcl);
-      map[s] = (map[s] ?? 0) + c.actualArs;
+    for (const investment of investments) {
+      const sector = getSector(investment.ticker, investment.instrument_type);
+      const row = calcRow(investment, currentCcl);
+      map[sector] = (map[sector] ?? 0) + row.actualArs;
     }
     return map;
   }, [investments, currentCcl]);
 
-  // ─── Positions ───────────────────────────────────────────────────────────────
   const positions = useMemo(
     () => buildPositions(investments, totals.actualArs, sectorTotals, currentCcl),
     [investments, totals.actualArs, sectorTotals, currentCcl],
   );
 
-  // ─── CAGR / XIRR ─────────────────────────────────────────────────────────────
   const { cagr, xirr } = useMemo(() => {
     if (investments.length === 0) return { cagr: 0, xirr: null };
-    const sorted = [...investments].sort((a, b) =>
-      new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
-    );
-    const firstDate = new Date(sorted[0].transaction_date);
-    const cagr = calcCAGR(totals.invertidoArs, totals.actualArs, firstDate);
 
-    const cashFlows: CashFlow[] = investments.map(inv => {
-      const c = calcRow(inv, currentCcl);
-      return { date: new Date(inv.transaction_date), amount: -c.invertidoArs };
+    const sorted = [...investments].sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime());
+    const cashFlows: CashFlow[] = investments.map((investment) => {
+      const row = calcRow(investment, currentCcl);
+      return { date: new Date(investment.transaction_date), amount: -row.invertidoArs };
     });
     cashFlows.push({ date: new Date(), amount: totals.actualArs });
     cashFlows.sort((a, b) => a.date.getTime() - b.date.getTime());
-    const xirr = calcXIRR(cashFlows);
-    return { cagr, xirr };
+
+    return {
+      cagr: calcCAGR(totals.invertidoArs, totals.actualArs, new Date(sorted[0].transaction_date)),
+      xirr: calcXIRR(cashFlows),
+    };
   }, [investments, totals, currentCcl]);
 
-  // ─── Smart insights ───────────────────────────────────────────────────────────
   const insights = useMemo(() => generateSmartInsights(
-    positions.map(p => ({
-      key: p.key, type: p.type, sector: p.sector,
-      currentValue: p.actualArs, totalInvested: p.invertidoArs,
-      returnPct: p.invertidoArs > 0 ? (p.gananciaArs / p.invertidoArs) : 0,
-      count: p.count, ppp: p.ppp,
-      maturityDate: p.maturityDate,
+    positions.map((position) => ({
+      key: position.key,
+      type: position.type,
+      sector: position.sector,
+      currentValue: position.actualArs,
+      totalInvested: position.invertidoArs,
+      returnPct: position.invertidoArs > 0 ? position.gananciaArs / position.invertidoArs : 0,
+      count: position.count,
+      ppp: position.ppp,
+      maturityDate: position.maturityDate,
     })),
     totals.actualArs,
     dashSummary?.balance ?? 0,
   ), [positions, totals.actualArs, dashSummary]);
 
-  // ─── Chart data ───────────────────────────────────────────────────────────────
   const chartData = useMemo(() => {
     if (investments.length === 0) return [];
-    const sortedInvs = [...investments].sort((a, b) =>
-      new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
-    );
-    const dateGroups = new Map<string, InvestmentEntry[]>();
-    for (const inv of sortedInvs) {
-      const d = inv.transaction_date.slice(0, 10);
-      if (!dateGroups.has(d)) dateGroups.set(d, []);
-      dateGroups.get(d)!.push(inv);
+    const sorted = [...investments].sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime());
+    const groups = new Map<string, InvestmentEntry[]>();
+
+    for (const investment of sorted) {
+      const date = investment.transaction_date.slice(0, 10);
+      if (!groups.has(date)) groups.set(date, []);
+      groups.get(date)!.push(investment);
     }
-    let cumInvested = 0;
+
+    let cumulative = 0;
     const points: Array<{ date: string; invested: number; portfolio: number }> = [];
     const isArs = currency === "ARS";
-    for (const [date, invs] of dateGroups) {
-      for (const inv of invs) {
-        const c = calcRow(inv, currentCcl);
-        cumInvested += isArs ? c.invertidoArs : c.invertidoUsd;
-      }
-      points.push({ date, invested: cumInvested, portfolio: cumInvested });
-    }
-    // Last point = current portfolio value
-    const todayVal = isArs ? totals.actualArs : totals.actualUsd;
-    if (points.length > 0) {
-      points[points.length - 1].portfolio = todayVal;
-    }
-    return points;
-  }, [investments, totals, currency]);
 
-  const sym = currency === "ARS" ? "$" : "USD ";
+    for (const [date, group] of groups) {
+      for (const investment of group) {
+        const row = calcRow(investment, currentCcl);
+        cumulative += isArs ? row.invertidoArs : row.invertidoUsd;
+      }
+      points.push({ date, invested: cumulative, portfolio: cumulative });
+    }
+
+    if (points.length > 0) {
+      points[points.length - 1].portfolio = isArs ? totals.actualArs : totals.actualUsd;
+    }
+
+    return points;
+  }, [investments, currency, currentCcl, totals.actualArs, totals.actualUsd]);
+
   const dispInv = currency === "ARS" ? totals.invertidoArs : totals.invertidoUsd;
   const dispAct = currency === "ARS" ? totals.actualArs : totals.actualUsd;
-  const dispGan = dispAct - dispInv;
-  const isGainPos = dispGan >= 0;
-
-  // Retorno USD real (usa CCL actual para valor presente, CCL compra para costo)
+  const sym = currency === "ARS" ? "$" : "USD ";
   const portfolioReturnPctUsd = currentCcl && totals.invertidoUsd > 0
     ? ((totals.actualUsd - totals.invertidoUsd) / totals.invertidoUsd) * 100
     : undefined;
 
-  // ─── Filter & sort ────────────────────────────────────────────────────────────
   const filteredPositions = useMemo(() => {
     let list = positions;
     if (filterText) {
       const q = filterText.toLowerCase();
-      list = list.filter(p => p.key.toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+      list = list.filter((position) => position.key.toLowerCase().includes(q) || position.name.toLowerCase().includes(q));
     }
     if (sectorFilter) {
-      list = list.filter(p => p.sector === sectorFilter);
+      list = list.filter((position) => position.sector === sectorFilter);
     }
     return sortPositions(list, sortCol, sortDir, currency);
   }, [positions, filterText, sectorFilter, sortCol, sortDir, currency]);
@@ -429,261 +219,183 @@ export function Investments() {
     let list = investments;
     if (filterText) {
       const q = filterText.toLowerCase();
-      list = list.filter(inv => (inv.ticker ?? "").toLowerCase().includes(q) || inv.name.toLowerCase().includes(q));
+      list = list.filter((investment) => (investment.ticker ?? "").toLowerCase().includes(q) || investment.name.toLowerCase().includes(q));
     }
     return sortTransactions(list, sortCol, sortDir, currency, currentCcl);
   }, [investments, filterText, sortCol, sortDir, currency, currentCcl]);
 
-  // ─── Mutations ────────────────────────────────────────────────────────────────
-  const p = (s: string) => parseFloat(s.replace(",", ".")) || 0;
-
   const addMutation = useMutation({
     mutationFn: () => {
-      const qty = p(form.quantity), priceArs = p(form.price_ars);
-      const ccl = p(form.dolar_ccl), currPrice = p(form.current_price_ars) || priceArs;
-      const tna = p(form.tna), dias = parseInt(form.plazo_dias) || 0;
-      let amtInvested = 0, currValue = 0;
+      const qty = p(form.quantity);
+      const priceArs = p(form.price_ars);
+      const ccl = p(form.dolar_ccl);
+      const currentPrice = p(form.current_price_ars) || priceArs;
+      const tna = p(form.tna);
+      const days = parseInt(form.plazo_dias) || 0;
+      let amountInvested = 0;
+      let currentValue = 0;
+
       if (instrType === "plazo_fijo") {
-        amtInvested = priceArs;
-        currValue = priceArs * (1 + (tna / 100) * (dias / 365));
+        amountInvested = priceArs;
+        currentValue = priceArs * (1 + (tna / 100) * (days / 365));
       } else if (instrType === "fci") {
-        amtInvested = qty * priceArs;
-        currValue = qty * currPrice;
+        amountInvested = qty * priceArs;
+        currentValue = qty * currentPrice;
       } else if (instrType === "bono") {
-        amtInvested = qty * (priceArs / 100); currValue = qty * (currPrice / 100);
+        amountInvested = qty * (priceArs / 100);
+        currentValue = qty * (currentPrice / 100);
       } else if (instrType === "crypto") {
-        amtInvested = qty * priceArs; currValue = qty * currPrice;
+        amountInvested = qty * priceArs;
+        currentValue = qty * currentPrice;
+      } else if (instrType === "otro") {
+        amountInvested = priceArs;
+        currentValue = currentPrice || priceArs;
       } else {
-        amtInvested = ccl > 0 ? (priceArs * qty) / ccl : 0;
-        currValue = ccl > 0 ? (currPrice * qty) / ccl : 0;
+        amountInvested = ccl > 0 ? (priceArs * qty) / ccl : 0;
+        currentValue = ccl > 0 ? (currentPrice * qty) / ccl : 0;
       }
+
       return createInvestment({
-        profile_id: PROFILE_ID, name: form.name || form.ticker,
-        ticker: form.ticker || undefined, amount_invested: amtInvested,
-        current_value: currValue || undefined, transaction_date: form.transaction_date,
-        notes: form.notes || undefined, quantity: qty || undefined,
-        price_ars: priceArs || undefined, dolar_ccl: ccl || undefined,
-        current_price_ars: currPrice || undefined, instrument_type: instrType,
-        tna: tna || undefined, plazo_dias: dias || undefined,
+        profile_id: profileId,
+        name: form.name || form.ticker,
+        ticker: form.ticker || undefined,
+        amount_invested: amountInvested,
+        current_value: currentValue || undefined,
+        transaction_date: form.transaction_date,
+        notes: form.notes || undefined,
+        quantity: qty || undefined,
+        price_ars: priceArs || undefined,
+        dolar_ccl: ccl || undefined,
+        current_price_ars: currentPrice || undefined,
+        instrument_type: instrType,
+        tna: tna || undefined,
+        plazo_dias: days || undefined,
         fecha_vencimiento: form.fecha_vencimiento || undefined,
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.investments() });
-      setModalOpen(false); setForm(emptyForm);
+      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
+      setModalOpen(false);
+      setForm(createEmptyInvestmentForm());
+      setTickerDetection(null);
       toast.success("Inversión registrada");
     },
-    onError: (e: unknown) => toast.error(String(e)),
+    onError: (error: unknown) => toast.error(String(error)),
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteInvestment,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.investments() });
-      setDeleteId(null); toast.success("Inversión eliminada");
+      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
+      setDeleteId(null);
+      toast.success("Inversión eliminada");
     },
   });
 
-  const [refreshing, setRefreshing] = useState(false);
-  const [editingPrice, setEditingPrice] = useState<{ id: string; value: string } | null>(null);
-
-  const savePrice = async (inv: InvestmentEntry) => {
+  const savePrice = async (investment: InvestmentEntry) => {
     if (!editingPrice) return;
     const newPrice = parseFloat(editingPrice.value.replace(",", "."));
-    if (isNaN(newPrice) || newPrice <= 0) { setEditingPrice(null); return; }
-    const ccl = inv.dolar_ccl ?? 1, qty = inv.quantity ?? 1;
-    const newCurrentValue = ccl > 0 ? (newPrice * qty) / ccl : inv.current_value ?? 0;
+    if (isNaN(newPrice) || newPrice <= 0) {
+      setEditingPrice(null);
+      return;
+    }
+
+    const ccl = investment.dolar_ccl ?? 1;
+    const qty = investment.quantity ?? 1;
+    const newCurrentValue = ccl > 0 ? (newPrice * qty) / ccl : investment.current_value ?? 0;
+
     try {
-      await updateInvestmentValue(inv.id, newCurrentValue, newPrice);
-      qc.invalidateQueries({ queryKey: QK.investments() });
+      await updateInvestmentValue(investment.id, newCurrentValue, newPrice);
+      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
       toast.success("Precio actualizado");
-    } catch (e) { toast.error(String(e)); }
+    } catch (error) {
+      toast.error(String(error));
+    }
+
     setEditingPrice(null);
   };
 
   const handleRefreshPrices = async () => {
-    const cedearAccion = investments.filter(i => i.instrument_type === "cedear" || i.instrument_type === "accion");
-    const tickers = [...new Set(cedearAccion.map(i => i.ticker ?? i.name).filter(Boolean))];
-    if (tickers.length === 0) { toast.error("No hay CEDEARs/Acciones para actualizar"); return; }
+    const equities = investments.filter((investment) => investment.instrument_type === "cedear" || investment.instrument_type === "accion");
+    const tickers = [...new Set(equities.map((investment) => investment.ticker ?? investment.name).filter(Boolean))];
+
+    if (tickers.length === 0) {
+      toast.error("No hay CEDEARs/Acciones para actualizar");
+      return;
+    }
+
     setRefreshing(true);
+
     try {
       const [prices, ccl] = await Promise.all([fetchPrices(tickers), fetchCcl().catch(() => null)]);
-      if (prices.length === 0) { toast.error("No se obtuvieron precios"); return; }
-      const updates = prices.map(pr => ({ ticker: pr.ticker, price_ars: pr.price_ars }));
-      const updated = await updatePricesByTicker(PROFILE_ID, updates, ccl ?? undefined);
-      if (ccl) setCurrentCcl(ccl);
-      qc.invalidateQueries({ queryKey: QK.investments() });
+      if (prices.length === 0) {
+        toast.error("No se obtuvieron precios");
+        return;
+      }
+
+      const updates = prices.map((price) => ({ ticker: price.ticker, price_ars: price.price_ars }));
+      const updated = await updatePricesByTicker(profileId, updates, ccl ?? undefined);
+
+      if (ccl) {
+        setCurrentCcl(ccl);
+        setCclStale(false);
+      }
+
+      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
       toast.success(`${updated} posición(es) actualizadas · CCL: $${ccl ? fNum(ccl, 0) : "—"}`);
 
-      // Save portfolio snapshot after price refresh
       try {
-        const recalcArs = investments.reduce((s, inv) => s + calcRow(inv, ccl ?? currentCcl).actualArs, 0);
-        const recalcUsd = investments.reduce((s, inv) => s + calcRow(inv, ccl ?? currentCcl).actualUsd, 0);
-        const recalcInvArs = investments.reduce((s, inv) => s + calcRow(inv, ccl ?? currentCcl).invertidoArs, 0);
-        await savePortfolioSnapshot(PROFILE_ID, recalcArs, recalcUsd, recalcInvArs, ccl ?? currentCcl ?? 0);
-        qc.invalidateQueries({ queryKey: QK.portfolioSnapshots() });
-      } catch { /* snapshot is non-critical */ }
-    } catch (e) { toast.error(String(e)); }
-    finally { setRefreshing(false); }
+        const snapshotCcl = ccl ?? currentCcl ?? 0;
+        const recalcArs = investments.reduce((sum, investment) => sum + calcRow(investment, snapshotCcl).actualArs, 0);
+        const recalcUsd = investments.reduce((sum, investment) => sum + calcRow(investment, snapshotCcl).actualUsd, 0);
+        const recalcInvArs = investments.reduce((sum, investment) => sum + calcRow(investment, snapshotCcl).invertidoArs, 0);
+        await savePortfolioSnapshot(profileId, recalcArs, recalcUsd, recalcInvArs, snapshotCcl);
+        qc.invalidateQueries({ queryKey: QK.portfolioSnapshots(profileId) });
+      } catch {
+        // snapshot non critical
+      }
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  const importRef = useRef<HTMLInputElement>(null);
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
+
     try {
       const rows = await importInvestments(file);
-      if (rows.length === 0) { toast.error("No se encontraron filas válidas"); return; }
-      for (const r of rows) {
+      if (rows.length === 0) {
+        toast.error("No se encontraron filas válidas");
+        return;
+      }
+
+      for (const row of rows) {
         await createInvestment({
-          profile_id: PROFILE_ID, name: r.name, ticker: r.ticker || undefined,
-          amount_invested: r.amount_invested, current_value: r.current_value || undefined,
-          transaction_date: r.transaction_date, notes: r.notes || undefined,
-          quantity: r.quantity, price_ars: r.price_ars,
-          dolar_ccl: r.dolar_ccl, current_price_ars: r.current_price_ars,
+          profile_id: profileId,
+          name: row.name,
+          ticker: row.ticker || undefined,
+          amount_invested: row.amount_invested,
+          current_value: row.current_value || undefined,
+          transaction_date: row.transaction_date,
+          notes: row.notes || undefined,
+          quantity: row.quantity,
+          price_ars: row.price_ars,
+          dolar_ccl: row.dolar_ccl,
+          current_price_ars: row.current_price_ars,
           instrument_type: "cedear",
         });
       }
-      qc.invalidateQueries({ queryKey: QK.investments() });
+
+      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
       toast.success(`${rows.length} inversión(es) importada(s)`);
-    } catch { toast.error("Error al importar. Verificá el formato."); }
-    e.target.value = "";
-  };
-
-  // ─── Ticker detection handler ─────────────────────────────────────────────────
-  const handleTickerChange = (val: string) => {
-    const upper = val.toUpperCase();
-    setForm(f => ({ ...f, ticker: upper }));
-    if (upper.length < 2) { setTickerDetection(null); return; }
-    const detected = detectInstrumentType(upper);
-    const switched = detected.confidence !== "low" && detected.type !== instrType;
-    if (switched) {
-      setInstrType(detected.type);
-      toast.info(`Tipo detectado: ${INSTRUMENT_LABELS[detected.type]}`, { duration: 2500 });
+    } catch {
+      toast.error("Error al importar. Verificá el formato.");
     }
-    setTickerDetection({ type: detected.type, confidence: detected.confidence, reason: detected.reason, switched });
-  };
 
-  const DetectionChip = () => {
-    if (!tickerDetection || tickerDetection.confidence === "low" || !form.ticker) return null;
-    const isMatch = tickerDetection.type === instrType;
-    const color = tickerDetection.confidence === "high"
-      ? (isMatch ? "var(--success)" : "var(--primary)")
-      : "var(--text-3)";
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "-6px" }}>
-        <span style={{
-          display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: 600,
-          background: `color-mix(in srgb, ${color} 12%, transparent)`,
-          border: `1px solid color-mix(in srgb, ${color} 35%, var(--border))`,
-          borderRadius: "5px", padding: "2px 8px", color,
-        }}>
-          {tickerDetection.switched ? "⚡ Cambiado a:" : "✓"} {INSTRUMENT_LABELS[tickerDetection.type]}
-        </span>
-        <span style={{ fontSize: "10px", color: "var(--text-3)" }}>{tickerDetection.reason}</span>
-      </div>
-    );
-  };
-
-  // ─── Form fields ─────────────────────────────────────────────────────────────
-  const formFields = () => {
-    if (instrType === "plazo_fijo") return (
-      <>
-        <Input label="Entidad / Banco *" placeholder="Ej: Banco Nación" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-          <Input label="Monto invertido $ *" type="text" inputMode="decimal" value={form.price_ars} onChange={e => setForm(f => ({ ...f, price_ars: e.target.value }))} />
-          <Input label="TNA % *" type="text" inputMode="decimal" value={form.tna} onChange={e => setForm(f => ({ ...f, tna: e.target.value }))} />
-          <Input label="Plazo (días) *" type="text" inputMode="numeric" value={form.plazo_dias} onChange={e => setForm(f => ({ ...f, plazo_dias: e.target.value }))} />
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Fecha inicio *" type="date" value={form.transaction_date} onChange={e => setForm(f => ({ ...f, transaction_date: e.target.value }))} />
-          <Input label="Fecha vencimiento" type="date" value={form.fecha_vencimiento} onChange={e => setForm(f => ({ ...f, fecha_vencimiento: e.target.value }))} />
-        </div>
-        {form.price_ars && form.tna && form.plazo_dias && (
-          <div style={{ background: "var(--surface-2)", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "var(--text-3)" }}>
-            Ganancia estimada: <strong style={{ color: "var(--success)", fontFamily: "var(--font-mono)" }}>
-              ${fNum(p(form.price_ars) * (p(form.tna) / 100) * (parseInt(form.plazo_dias) / 365))}
-            </strong>
-          </div>
-        )}
-      </>
-    );
-    if (instrType === "fci") return (
-      <>
-        <Input label="Nombre del fondo *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Cuotapartes *" type="text" inputMode="decimal" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
-          <Input label="VCP compra $ *" type="text" inputMode="decimal" value={form.price_ars} onChange={e => setForm(f => ({ ...f, price_ars: e.target.value }))} />
-        </div>
-        <Input label="VCP actual $" type="text" inputMode="decimal" value={form.current_price_ars} onChange={e => setForm(f => ({ ...f, current_price_ars: e.target.value }))} />
-      </>
-    );
-    if (instrType === "bono") return (
-      <>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Ticker *" value={form.ticker} onChange={e => handleTickerChange(e.target.value)} />
-          <Input label="Nombre (opcional)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-        </div>
-        <DetectionChip />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "12px" }}>
-          <Input label="VN *" type="text" inputMode="decimal" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
-          <Input label="Precio % *" type="text" inputMode="decimal" value={form.price_ars} onChange={e => setForm(f => ({ ...f, price_ars: e.target.value }))} />
-          <Input label="CCL" type="text" inputMode="decimal" value={form.dolar_ccl} onChange={e => setForm(f => ({ ...f, dolar_ccl: e.target.value }))} />
-          <Input label="Precio actual %" type="text" inputMode="decimal" value={form.current_price_ars} onChange={e => setForm(f => ({ ...f, current_price_ars: e.target.value }))} />
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Fecha compra *" type="date" value={form.transaction_date} onChange={e => setForm(f => ({ ...f, transaction_date: e.target.value }))} />
-          <Input label="Fecha vencimiento" type="date" value={form.fecha_vencimiento} onChange={e => setForm(f => ({ ...f, fecha_vencimiento: e.target.value }))} />
-        </div>
-      </>
-    );
-    if (instrType === "crypto") return (
-      <>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Ticker *" value={form.ticker} onChange={e => handleTickerChange(e.target.value)} />
-          <Input label="Nombre" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-        </div>
-        <DetectionChip />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-          <Input label="Cantidad *" type="text" inputMode="decimal" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
-          <Input label="Precio USD compra *" type="text" inputMode="decimal" value={form.price_ars} onChange={e => setForm(f => ({ ...f, price_ars: e.target.value }))} />
-          <Input label="Precio USD actual" type="text" inputMode="decimal" value={form.current_price_ars} onChange={e => setForm(f => ({ ...f, current_price_ars: e.target.value }))} />
-        </div>
-        <Input label="Dólar CCL" type="text" inputMode="decimal" value={form.dolar_ccl} onChange={e => setForm(f => ({ ...f, dolar_ccl: e.target.value }))} />
-      </>
-    );
-    if (instrType === "otro") return (
-      <>
-        <Input label="Descripción *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Monto invertido *" type="text" inputMode="decimal" value={form.price_ars} onChange={e => setForm(f => ({ ...f, price_ars: e.target.value }))} />
-          <Input label="Valor actual" type="text" inputMode="decimal" value={form.current_price_ars} onChange={e => setForm(f => ({ ...f, current_price_ars: e.target.value }))} />
-        </div>
-      </>
-    );
-    // cedear / accion
-    return (
-      <>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <Input label="Ticker *" placeholder="Ej: NVDAD, GGAL" value={form.ticker} onChange={e => handleTickerChange(e.target.value)} />
-          <Input label="Nombre (opcional)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-        </div>
-        <DetectionChip />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-          <Input label="Cantidad *" type="text" inputMode="numeric" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
-          <Input label="Precio ARS *" type="text" inputMode="decimal" value={form.price_ars} onChange={e => setForm(f => ({ ...f, price_ars: e.target.value }))} />
-          <Input label="Dólar CCL *" type="text" inputMode="decimal" value={form.dolar_ccl} onChange={e => setForm(f => ({ ...f, dolar_ccl: e.target.value }))} />
-        </div>
-        <Input label="Precio actual ARS" type="text" inputMode="decimal" value={form.current_price_ars} onChange={e => setForm(f => ({ ...f, current_price_ars: e.target.value }))} />
-        {form.price_ars && form.dolar_ccl && form.quantity && (
-          <div style={{ background: "var(--surface-2)", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "var(--text-3)" }}>
-            Total: <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>
-              USD {fNum((p(form.price_ars) * p(form.quantity)) / p(form.dolar_ccl))}
-            </strong>
-          </div>
-        )}
-      </>
-    );
+    event.target.value = "";
   };
 
   const canSave = () => {
@@ -695,93 +407,104 @@ export function Investments() {
     return !!form.ticker && !!form.quantity && !!form.price_ars && !!form.dolar_ccl;
   };
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: "6px 16px", fontSize: "12px", fontWeight: 500, border: "none", cursor: "pointer",
-    borderRadius: "6px", background: active ? "var(--primary)" : "transparent",
-    color: active ? "#fff" : "var(--text-3)", transition: "all 0.15s",
-  });
-
-  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ padding: "28px 32px", maxWidth: "1560px" }}>
-
-      {/* ── Header ───────────────────────────────────────────────────────────── */}
-      <div className="animate-fade-in-up" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "20px", gap: "16px" }}>
-
-        {/* Izquierda: título + toggle/CCL + acciones operativas */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-
-          {/* Fila 1: título + chip sector */}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <h1 style={{ fontSize: "20px", fontWeight: 600, color: "var(--text)", letterSpacing: "-0.01em" }}>Inversiones</h1>
-            {sectorFilter && (
-              <span
-                onClick={() => setSectorFilter(null)}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: "5px",
-                  background: "color-mix(in srgb, var(--primary) 12%, transparent)",
-                  border: "1px solid color-mix(in srgb, var(--primary) 30%, var(--border))",
-                  borderRadius: "6px", padding: "2px 8px", fontSize: "11px",
-                  color: "var(--primary)", cursor: "pointer", fontWeight: 500,
-                }}
-              >
-                Sector: {sectorFilter} ×
-              </span>
-            )}
-          </div>
-
-          {/* Fila 2: toggle ARS/USD + valor CCL */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <PageHeader
+        title="Inversiones"
+        description="Portfolio, rendimiento y riesgo en una sola vista. La importación y exportación Excel se conserva intacta."
+        actions={
+          <>
             <div style={{ display: "flex", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "6px", padding: "2px", gap: "1px" }}>
-              {(["ARS", "USD"] as Currency[]).map(c => (
-                <button key={c} onClick={() => setCurrency(c)} style={{
-                  padding: "2px 9px", fontSize: "11px", fontWeight: 700, border: "none", cursor: "pointer",
-                  borderRadius: "4px", fontFamily: "var(--font-mono)",
-                  background: currency === c ? "var(--primary)" : "transparent",
-                  color: currency === c ? "#fff" : "var(--text-3)", transition: "all 0.15s",
-                }}>{c}</button>
+              {(["ARS", "USD"] as Currency[]).map((value) => (
+                <button
+                  key={value}
+                  onClick={() => setCurrency(value)}
+                  style={{
+                    padding: "2px 9px",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    border: "none",
+                    cursor: "pointer",
+                    borderRadius: "4px",
+                    fontFamily: "var(--font-mono)",
+                    background: currency === value ? "var(--primary)" : "transparent",
+                    color: currency === value ? "#fff" : "var(--text-3)",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {value}
+                </button>
               ))}
             </div>
             {currentCcl && (
               <span
                 title={cclStale ? "Último valor guardado — actualizar precios para refrescar" : "CCL actualizado"}
                 style={{
-                  display: "inline-flex", alignItems: "center", gap: "4px",
-                  background: "var(--surface-2)", border: `1px solid ${cclStale ? "var(--border)" : "color-mix(in srgb, var(--success) 40%, var(--border))"}`,
-                  borderRadius: "6px", padding: "2px 8px", fontSize: "11px",
-                  color: "var(--text-3)", fontFamily: "var(--font-mono)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  background: "var(--surface-2)",
+                  border: `1px solid ${cclStale ? "var(--border)" : "color-mix(in srgb, var(--success) 40%, var(--border))"}`,
+                  borderRadius: "6px",
+                  padding: "2px 8px",
+                  fontSize: "11px",
+                  color: "var(--text-3)",
+                  fontFamily: "var(--font-mono)",
                   opacity: cclStale ? 0.75 : 1,
-                }}>
+                }}
+              >
                 <DollarSign size={10} />CCL: <strong style={{ color: "var(--text-2)" }}>${fNum(currentCcl, 0)}</strong>
-                {cclStale && <span style={{ fontSize: "9px", color: "var(--text-3)" }}>~</span>}
               </span>
             )}
-          </div>
-
-          {/* Fila 3: Rebalanceo + Actualizar precios */}
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <Button variant="outline" size="sm" onClick={() => setRebalanceOpen(true)} title="Simular rebalanceo">
+            <Button variant="outline" size="sm" onClick={() => setRebalanceOpen(true)}>
               <Target size={13} /> Rebalanceo
             </Button>
             <Button variant="outline" size="sm" onClick={handleRefreshPrices} disabled={refreshing}>
               <RefreshCw size={13} style={{ animation: refreshing ? "spin 1s linear infinite" : "none" }} />
               {refreshing ? "Actualizando..." : "Actualizar precios"}
             </Button>
-          </div>
-        </div>
+            <Button variant="outline" size="xs" onClick={() => exportInvestmentsTemplate()}>
+              <Download size={11} /> Plantilla
+            </Button>
+            <Button variant="outline" size="xs" onClick={() => importRef.current?.click()}>
+              <Upload size={11} /> Importar
+            </Button>
+            <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
+            <Button size="xs" onClick={() => { setModalOpen(true); setForm(createEmptyInvestmentForm()); setTickerDetection(null); }}>
+              <Plus size={12} /> Nueva inversión
+            </Button>
+          </>
+        }
+      />
 
-        {/* Derecha: acciones de archivo + nueva inversión */}
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0, paddingTop: "2px" }}>
-          <Button variant="outline" size="xs" onClick={() => exportInvestmentsTemplate()}><Download size={11} /> Plantilla</Button>
-          <Button variant="outline" size="xs" onClick={() => importRef.current?.click()}><Upload size={11} /> Importar</Button>
-          <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
-          <Button size="xs" onClick={() => { setModalOpen(true); setForm(emptyForm); }}><Plus size={12} /> Nueva inversión</Button>
+      {sectorFilter && (
+        <div style={{ marginBottom: "12px" }}>
+          <span
+            onClick={() => setSectorFilter(null)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              background: "color-mix(in srgb, var(--primary) 12%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--primary) 30%, var(--border))",
+              borderRadius: "6px",
+              padding: "2px 8px",
+              fontSize: "11px",
+              color: "var(--primary)",
+              cursor: "pointer",
+              fontWeight: 500,
+            }}
+          >
+            Sector: {sectorFilter} ×
+          </span>
         </div>
-      </div>
+      )}
 
       {isLoading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} style={{ height: "80px" }} />)}
+          <Card style={{ padding: "32px", color: "var(--text-3)" }}>Cargando cartera…</Card>
+          <Card style={{ padding: "32px", color: "var(--text-3)" }}>Preparando métricas…</Card>
+          <Card style={{ padding: "32px", color: "var(--text-3)" }}>Armando posiciones…</Card>
         </div>
       ) : investments.length === 0 ? (
         <Card style={{ padding: "60px 20px", display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
@@ -796,7 +519,6 @@ export function Investments() {
         </Card>
       ) : (
         <>
-          {/* ── KPI Bar ─────────────────────────────────────────────────────── */}
           <div className="animate-fade-in-up">
             <PortfolioKPIBar
               portfolioValue={dispAct}
@@ -809,23 +531,21 @@ export function Investments() {
             />
           </div>
 
-          {/* ── Chart ───────────────────────────────────────────────────────── */}
           <div className="animate-fade-in-up" style={{ marginBottom: "16px" }}>
             <PortfolioChart chartData={chartData} snapshots={snapshots} currency={currency} sym={sym} />
           </div>
 
-          {/* ── Allocation Charts ────────────────────────────────────────────── */}
           <div className="animate-fade-in-up">
             <AllocationCharts
-              positions={positions.map(pos => ({
-                key: pos.key,
-                type: pos.type,
-                typeLabel: pos.typeLabel,
-                typeColor: pos.typeColor,
-                sector: pos.sector,
-                currentValueArs: pos.actualArs,
-                currentValueUsd: pos.actualUsd,
-                invertidoArs: pos.invertidoArs,
+              positions={positions.map((position) => ({
+                key: position.key,
+                type: position.type,
+                typeLabel: position.typeLabel,
+                typeColor: position.typeColor,
+                sector: position.sector,
+                currentValueArs: position.actualArs,
+                currentValueUsd: position.actualUsd,
+                invertidoArs: position.invertidoArs,
               }))}
               currency={currency}
               sym={sym}
@@ -834,382 +554,95 @@ export function Investments() {
             />
           </div>
 
-          {/* ── Insights ─────────────────────────────────────────────────────── */}
           <div className="animate-fade-in-up">
-            <InsightsPanel insights={insights} />
+            <InsightsPanel insights={insights.filter((insight) => insight.level !== "info" || insight.action)} />
           </div>
 
-          {/* ── Tabs + Filter ─────────────────────────────────────────────────── */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
             <div style={{ display: "flex", gap: "4px", background: "var(--surface-2)", padding: "4px", borderRadius: "8px" }}>
-              <button style={tabStyle(activeTab === "resumen")} onClick={() => setActiveTab("resumen")}>
+              <button style={investmentsTabStyle(activeTab === "resumen")} onClick={() => setActiveTab("resumen")}>
                 <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                   <BarChart2 size={12} /> Posiciones
                 </span>
               </button>
-              <button style={tabStyle(activeTab === "transacciones")} onClick={() => setActiveTab("transacciones")}>
+              <button style={investmentsTabStyle(activeTab === "transacciones")} onClick={() => setActiveTab("transacciones")}>
                 Transacciones
               </button>
             </div>
             <input
-              type="text" placeholder="Filtrar por instrumento..." value={filterText}
-              onChange={e => setFilterText(e.target.value)}
+              type="text"
+              placeholder="Filtrar por instrumento..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
               style={{
-                height: "32px", width: "220px", borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--border-light)", background: "var(--surface-2)",
-                padding: "0 10px", fontSize: "12px", color: "var(--text)",
-                fontFamily: "var(--font-ui)", outline: "none",
+                height: "32px",
+                width: "220px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-light)",
+                background: "var(--surface-2)",
+                padding: "0 10px",
+                fontSize: "12px",
+                color: "var(--text)",
+                fontFamily: "var(--font-ui)",
+                outline: "none",
               }}
-              onFocus={e => (e.currentTarget.style.borderColor = "var(--primary)")}
-              onBlur={e => (e.currentTarget.style.borderColor = "var(--border-light)")}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--primary)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border-light)")}
             />
           </div>
 
-          {/* ── Positions Table ───────────────────────────────────────────────── */}
-          {activeTab === "resumen" && (
-            <Card className="animate-fade-in-up delay-100" style={{ padding: 0, overflow: "hidden" }}>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                      <SortTH label="Instrumento" col="nombre" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                      <SortTH label="Tipo" col="tipo" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                      <th style={TH}>Sector</th>
-                      <th style={{ ...TH, textAlign: "right" }}>PPP</th>
-                      <th style={{ ...TH, textAlign: "right" }}>Precio Act.</th>
-                      <SortTH label={`Invertido ${currency}`} col="invertido" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} right />
-                      <SortTH label={`Valor Act. ${currency}`} col="actual" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} right />
-                      <SortTH label={`Gan. ${currency}`} col="ganancia" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} right />
-                      <SortTH label="% Ret." col="pct" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} right />
-                      <SortTH label="Peso" col="peso" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} right />
-                      <th style={{ ...TH }}>Señales</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPositions.map((pos, i) => {
-                      const isArs = currency === "ARS";
-                      const invertido = isArs ? pos.invertidoArs : pos.invertidoUsd;
-                      const actual = isArs ? pos.actualArs : pos.actualUsd;
-                      const ganancia = isArs ? pos.gananciaArs : pos.gananciaUsd;
-                      const returnPct = invertido > 0 ? (ganancia / invertido) * 100 : 0;
-                      const isPos = ganancia >= 0;
-                      const isExpanded = expandedPos === pos.key;
-                      const isLast = i === filteredPositions.length - 1;
-                      const rowBg = isPos
-                        ? "color-mix(in srgb, var(--success) 4%, transparent)"
-                        : "color-mix(in srgb, var(--danger) 4%, transparent)";
-
-                      return (
-                        <Fragment key={pos.key}>
-                          <tr
-                            onClick={() => setExpandedPos(isExpanded ? null : pos.key)}
-                            style={{
-                              borderBottom: !isExpanded && !isLast ? "1px solid var(--border-light)" : isExpanded ? "1px solid var(--border-light)" : "none",
-                              cursor: "pointer",
-                              background: isExpanded ? "var(--surface-2)" : "transparent",
-                              transition: "background 0.1s",
-                            }}
-                            onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = rowBg; }}
-                            onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = "transparent"; }}
-                          >
-                            <td style={{ ...TD, fontFamily: "var(--font-ui)", fontWeight: 600, color: "var(--text)" }}>
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                                <ChevronRight size={13} style={{ color: "var(--text-3)", transition: "transform 0.2s", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", flexShrink: 0 }} />
-                                {pos.key}
-                                {pos.name && pos.name.toUpperCase() !== pos.key && (
-                                  <span style={{ fontWeight: 400, color: "var(--text-3)", fontSize: "11px" }}>{pos.name}</span>
-                                )}
-                                {pos.count > 1 && (
-                                  <span style={{ fontSize: "10px", padding: "1px 5px", borderRadius: "4px", background: "var(--surface-3)", color: "var(--text-3)" }}>{pos.count}</span>
-                                )}
-                              </span>
-                            </td>
-                            <td style={{ ...TD, fontFamily: "var(--font-ui)" }}><TypeBadge type={pos.type} /></td>
-                            <td style={{ ...TD, fontFamily: "var(--font-ui)" }}>
-                              <span
-                                onClick={e => { e.stopPropagation(); setSectorFilter(sectorFilter === pos.sector ? null : pos.sector); }}
-                                style={{
-                                  fontSize: "11px", cursor: "pointer",
-                                  padding: "1px 6px", borderRadius: "4px",
-                                  background: sectorFilter === pos.sector ? "color-mix(in srgb, var(--primary) 12%, transparent)" : "transparent",
-                                  color: sectorFilter === pos.sector ? "var(--primary)" : "var(--text-3)",
-                                  transition: "all 0.12s",
-                                }}
-                                title="Filtrar por sector"
-                              >
-                                {pos.sector}
-                              </span>
-                            </td>
-                            <td style={{ ...TD, textAlign: "right" }}>
-                              {pos.ppp !== null ? <span style={{ color: "var(--text-2)" }}>${fNum(pos.ppp)}</span> : <span style={{ color: "var(--text-3)" }}>—</span>}
-                            </td>
-                            <td style={{ ...TD, textAlign: "right" }}>
-                              {pos.currentPriceArs !== null ? (
-                                <span style={{ color: pos.currentPriceArs > (pos.ppp ?? pos.currentPriceArs) ? "var(--success)" : pos.currentPriceArs < (pos.ppp ?? pos.currentPriceArs) ? "var(--danger)" : "var(--text-2)" }}>
-                                  ${fNum(pos.currentPriceArs)}
-                                </span>
-                              ) : <span style={{ color: "var(--text-3)" }}>—</span>}
-                            </td>
-                            <td style={{ ...TD, textAlign: "right" }}>{sym}{fNum(invertido)}</td>
-                            <td style={{ ...TD, textAlign: "right", fontWeight: 600 }}>{sym}{fNum(actual)}</td>
-                            <td style={{ ...TD, textAlign: "right", color: isPos ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
-                              {isPos ? "+" : ""}{sym}{fNum(ganancia)}
-                            </td>
-                            <td style={{ ...TD, textAlign: "right", color: isPos ? "var(--success)" : "var(--danger)", fontWeight: 700 }}>
-                              {fPct(returnPct)}
-                            </td>
-                            <td style={{ ...TD, textAlign: "right" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px", justifyContent: "flex-end" }}>
-                                <div style={{ width: "44px", height: "5px", borderRadius: "3px", background: "var(--border)", overflow: "hidden" }}>
-                                  <div style={{ height: "100%", width: `${Math.min(pos.weightPct, 100)}%`, background: pos.signals.some(s => s.level === "danger") ? "var(--danger)" : pos.signals.some(s => s.level === "warning") ? "var(--warning)" : INSTRUMENT_COLORS_HEX[pos.type], borderRadius: "3px" }} />
-                                </div>
-                                <span style={{ fontSize: "11px", color: "var(--text-3)", minWidth: "34px", textAlign: "right" }}>{pos.weightPct.toFixed(1)}%</span>
-                              </div>
-                            </td>
-                            <td style={{ ...TD, fontFamily: "var(--font-ui)" }}>
-                              <SignalBadges signals={pos.signals} />
-                            </td>
-                          </tr>
-
-                          {/* ── Drill-down ─────────────────────────────────── */}
-                          {isExpanded && (
-                            <tr>
-                              <td colSpan={11} style={{ padding: 0, borderBottom: !isLast ? "1px solid var(--border)" : "none" }}>
-                                <div style={{
-                                  background: "var(--surface-3, var(--surface-2))",
-                                  borderLeft: `3px solid ${INSTRUMENT_COLORS_HEX[pos.type]}`,
-                                  padding: "12px 24px 16px 36px",
-                                }}>
-                                  <div style={{ fontSize: "10px", fontWeight: 700, color: "var(--text-3)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>
-                                    Detalle de operaciones — {pos.key}
-                                  </div>
-                                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                    <thead>
-                                      <tr>
-                                        {["Fecha", "Detalles", "Precio compra", "Precio actual", "Invertido", "Valor act.", "Ganancia", "% Gan."].map((h, hi) => (
-                                          <th key={hi} style={{ ...TH, padding: "4px 10px", background: "transparent", textAlign: hi >= 2 ? "right" : "left" }}>{h}</th>
-                                        ))}
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {pos.entries.slice().sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()).map((inv, ei) => {
-                                        const c = calcRow(inv, currentCcl);
-                                        const dInv = isArs ? c.invertidoArs : c.invertidoUsd;
-                                        const dAct = isArs ? c.actualArs : c.actualUsd;
-                                        const dGan = isArs ? c.gananciaArs : c.gananciaUsd;
-                                        const dPct = dInv > 0 ? (dGan / dInv) * 100 : 0;
-                                        const dPos = dGan >= 0;
-                                        const entryPrice = inv.price_ars ?? 0;
-                                        const pppDiff = pos.ppp !== null && entryPrice > 0 ? ((entryPrice - pos.ppp) / pos.ppp) * 100 : null;
-                                        return (
-                                          <tr key={inv.id} style={{ borderTop: ei > 0 ? "1px solid var(--border-light)" : "none" }}>
-                                            <td style={{ ...TD, padding: "6px 10px", color: "var(--text-3)", fontSize: "11px" }}>{formatDate(inv.transaction_date)}</td>
-                                            <td style={{ ...TD, padding: "6px 10px", color: "var(--text-3)", fontSize: "11px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{c.detalles || "—"}</td>
-                                            <td style={{ ...TD, padding: "6px 10px", textAlign: "right", fontSize: "11px" }}>
-                                              {entryPrice > 0 ? (
-                                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                                  ${fNum(entryPrice)}
-                                                  {pppDiff !== null && (
-                                                    <span style={{ fontSize: "9px", color: pppDiff > 0 ? "var(--danger)" : "var(--success)", fontWeight: 600 }}>
-                                                      {pppDiff > 0 ? "▲" : "▼"}{Math.abs(pppDiff).toFixed(1)}%
-                                                    </span>
-                                                  )}
-                                                </span>
-                                              ) : "—"}
-                                            </td>
-                                            <td style={{ ...TD, padding: "6px 10px", textAlign: "right", fontSize: "11px" }}>
-                                              {inv.current_price_ars ? `$${fNum(inv.current_price_ars)}` : <span style={{ color: "var(--text-3)" }}>—</span>}
-                                            </td>
-                                            <td style={{ ...TD, padding: "6px 10px", textAlign: "right", fontSize: "11px" }}>{sym}{fNum(dInv)}</td>
-                                            <td style={{ ...TD, padding: "6px 10px", textAlign: "right", fontSize: "11px" }}>{sym}{fNum(dAct)}</td>
-                                            <td style={{ ...TD, padding: "6px 10px", textAlign: "right", fontSize: "11px", color: dPos ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
-                                              {dPos ? "+" : ""}{sym}{fNum(dGan)}
-                                            </td>
-                                            <td style={{ ...TD, padding: "6px 10px", textAlign: "right", fontSize: "11px", color: dPos ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
-                                              {fPct(dPct)}
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                    {pos.count > 1 && pos.ppp !== null && (
-                                      <tfoot>
-                                        <tr style={{ borderTop: "1px solid var(--border)" }}>
-                                          <td colSpan={2} style={{ ...TD, padding: "6px 10px", fontSize: "11px", color: "var(--text-3)" }}>PPP consolidado</td>
-                                          <td colSpan={6} style={{ ...TD, padding: "6px 10px", fontSize: "11px" }}>
-                                            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-2)", fontWeight: 700 }}>${fNum(pos.ppp)}</span>
-                                            <span style={{ color: "var(--text-3)", marginLeft: 8 }}>· {fNum(pos.totalQty, pos.totalQty % 1 === 0 ? 0 : 2)} unidades</span>
-                                            {pos.currentPriceArs && (
-                                              <span style={{ marginLeft: 8, color: pos.currentPriceArs >= pos.ppp ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
-                                                · {pos.currentPriceArs >= pos.ppp ? "▲" : "▼"} {Math.abs(((pos.currentPriceArs - pos.ppp) / pos.ppp) * 100).toFixed(1)}% vs PPP
-                                              </span>
-                                            )}
-                                          </td>
-                                        </tr>
-                                      </tfoot>
-                                    )}
-                                  </table>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-
-                    {/* Totals row */}
-                    <tr style={{ borderTop: "2px solid var(--border)", background: "var(--surface-2)" }}>
-                      <td style={{ ...TD, fontFamily: "var(--font-ui)", fontWeight: 700, color: "var(--text)" }} colSpan={2}>TOTAL</td>
-                      <td colSpan={3} style={{ ...TD, color: "var(--text-3)", fontSize: "11px" }}>
-                        {filteredPositions.length} posición{filteredPositions.length !== 1 ? "es" : ""} · {investments.length} transacción{investments.length !== 1 ? "es" : ""}
-                      </td>
-                      <td style={{ ...TD, textAlign: "right", fontWeight: 700 }}>{sym}{fNum(dispInv)}</td>
-                      <td style={{ ...TD, textAlign: "right", fontWeight: 700 }}>{sym}{fNum(dispAct)}</td>
-                      <td style={{ ...TD, textAlign: "right", fontWeight: 700, color: isGainPos ? "var(--success)" : "var(--danger)" }}>
-                        {isGainPos ? "+" : ""}{sym}{fNum(dispGan)}
-                      </td>
-                      <td style={{ ...TD, textAlign: "right", fontWeight: 700, color: isGainPos ? "var(--success)" : "var(--danger)" }}>
-                        {dispInv > 0 ? fPct((dispGan / dispInv) * 100) : "—"}
-                      </td>
-                      <td colSpan={2} style={{ ...TD, textAlign: "right", fontWeight: 700, color: "var(--text-3)", fontSize: "11px" }}>100%</td>
-                    </tr>
-                  </tbody>
-                </table>
-                {filteredPositions.length === 0 && (
-                  <div style={{ padding: "24px", textAlign: "center", color: "var(--text-3)", fontSize: "13px" }}>
-                    No hay posiciones para "{filterText || sectorFilter}"
-                  </div>
-                )}
-              </div>
-            </Card>
-          )}
-
-          {/* ── Transactions Tab ─────────────────────────────────────────────── */}
-          {activeTab === "transacciones" && (
-            <Card className="animate-fade-in-up delay-100" style={{ padding: 0, overflow: "hidden" }}>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                      <SortTH label="Fecha" col="fecha" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                      <SortTH label="Tipo" col="tipo" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                      <SortTH label="Instrumento" col="nombre" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                      <th style={TH}>Detalles</th>
-                      <SortTH label={`Invertido ${currency}`} col="invertido" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} right />
-                      <SortTH label={`Valor Act. ${currency}`} col="actual" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} right />
-                      <SortTH label={`Gan. ${currency}`} col="ganancia" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} right />
-                      <SortTH label="% Gan." col="pct" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} right />
-                      <th style={{ ...TH, width: "36px" }} />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTransactions.map((inv, i) => {
-                      const c = calcRow(inv, currentCcl);
-                      const isArs = currency === "ARS";
-                      const investido = isArs ? c.invertidoArs : c.invertidoUsd;
-                      const actual = isArs ? c.actualArs : c.actualUsd;
-                      const ganancia = isArs ? c.gananciaArs : c.gananciaUsd;
-                      const pct = isArs ? c.gananciaPctArs : c.gananciaPctUsd;
-                      const isPos = ganancia >= 0;
-                      const type = effectiveType(inv.ticker, inv.instrument_type);
-                      return (
-                        <tr key={inv.id}
-                          style={{ borderBottom: i !== filteredTransactions.length - 1 ? "1px solid var(--border-light)" : "none", transition: "background 0.1s" }}
-                          onMouseEnter={e => (e.currentTarget.style.background = "var(--surface-2)")}
-                          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                        >
-                          <td style={{ ...TD, color: "var(--text-3)" }}>{formatDate(inv.transaction_date)}</td>
-                          <td style={{ ...TD, fontFamily: "var(--font-ui)" }}><TypeBadge type={type} /></td>
-                          <td style={{ ...TD, fontFamily: "var(--font-ui)", fontWeight: 600, color: "var(--text)" }}>
-                            {inv.ticker ?? inv.name}
-                            {inv.ticker && inv.name && inv.name !== inv.ticker && (
-                              <span style={{ fontWeight: 400, color: "var(--text-3)", fontSize: "11px", marginLeft: 4 }}>{inv.name}</span>
-                            )}
-                          </td>
-                          <td style={{ ...TD, color: "var(--text-3)", fontSize: "11px", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis" }}>{c.detalles}</td>
-                          <td style={{ ...TD, textAlign: "right" }}>{sym}{fNum(investido)}</td>
-                          <td
-                            style={{ ...TD, textAlign: "right", cursor: type !== "plazo_fijo" ? "pointer" : "default" }}
-                            title={type !== "plazo_fijo" ? "Click para editar precio actual" : undefined}
-                            onClick={() => type !== "plazo_fijo" && setEditingPrice({ id: inv.id, value: inv.current_price_ars?.toString() ?? "" })}
-                          >
-                            {editingPrice?.id === inv.id ? (
-                              <input autoFocus type="text" inputMode="decimal"
-                                value={editingPrice.value}
-                                onChange={e => setEditingPrice({ id: inv.id, value: e.target.value })}
-                                onBlur={() => savePrice(inv)}
-                                onKeyDown={e => { if (e.key === "Enter") savePrice(inv); if (e.key === "Escape") setEditingPrice(null); }}
-                                onClick={e => e.stopPropagation()}
-                                style={{ width: "90px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "12px", background: "var(--surface)", border: "1px solid var(--primary)", borderRadius: "4px", padding: "2px 6px", color: "var(--text)", outline: "none" }}
-                              />
-                            ) : (
-                              <span style={type !== "plazo_fijo" ? { borderBottom: "1px dashed var(--border)" } : {}}>
-                                {sym}{fNum(actual)}
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ ...TD, textAlign: "right", color: isPos ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
-                            {isPos ? "+" : ""}{sym}{fNum(ganancia)}
-                          </td>
-                          <td style={{ ...TD, textAlign: "right", color: isPos ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
-                            {fPct(pct)}
-                          </td>
-                          <td style={{ ...TD, textAlign: "right" }}>
-                            <button onClick={() => setDeleteId(inv.id)}
-                              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)", padding: "4px", borderRadius: "4px", display: "flex", alignItems: "center" }}
-                              onMouseEnter={e => (e.currentTarget.style.color = "var(--danger)")}
-                              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-3)")}
-                            ><Trash2 size={13} /></button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {filteredTransactions.length === 0 && filterText && (
-                  <div style={{ padding: "24px", textAlign: "center", color: "var(--text-3)", fontSize: "13px" }}>
-                    No hay resultados para "{filterText}"
-                  </div>
-                )}
-              </div>
-            </Card>
+          {activeTab === "resumen" ? (
+            <PositionsTable
+              positions={filteredPositions}
+              investmentsCount={investments.length}
+              currency={currency}
+              sym={sym}
+              sortCol={sortCol}
+              sortDir={sortDir}
+              onSort={handleSort}
+              expandedPos={expandedPos}
+              setExpandedPos={setExpandedPos}
+              sectorFilter={sectorFilter}
+              setSectorFilter={setSectorFilter}
+              currentCcl={currentCcl}
+              dispInv={dispInv}
+              dispAct={dispAct}
+            />
+          ) : (
+            <TransactionsTable
+              transactions={filteredTransactions}
+              currency={currency}
+              sym={sym}
+              sortCol={sortCol}
+              sortDir={sortDir}
+              onSort={handleSort}
+              currentCcl={currentCcl}
+              editingPrice={editingPrice}
+              setEditingPrice={setEditingPrice}
+              savePrice={savePrice}
+              setDeleteId={setDeleteId}
+            />
           )}
         </>
       )}
 
-      {/* ── Modal Nueva Inversión ────────────────────────────────────────────── */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nueva inversión">
-        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-          <div>
-            <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-3)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "8px" }}>Tipo de instrumento</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {(Object.keys(INSTRUMENT_LABELS) as InstrumentType[]).map(t => (
-                <button key={t} onClick={() => { setInstrType(t); setForm(emptyForm); setTickerDetection(null); }} style={{
-                  padding: "5px 12px", fontSize: "12px", fontWeight: 600, border: "1px solid",
-                  cursor: "pointer", borderRadius: "6px", transition: "all 0.15s",
-                  borderColor: instrType === t ? INSTRUMENT_COLORS[t] : "var(--border)",
-                  background: instrType === t ? INSTRUMENT_COLORS[t] + "22" : "transparent",
-                  color: instrType === t ? INSTRUMENT_COLORS[t] : "var(--text-3)",
-                }}>{INSTRUMENT_LABELS[t]}</button>
-              ))}
-            </div>
-          </div>
-          {formFields()}
-          <Input label="Notas" placeholder="Opcional" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
-          {(instrType === "cedear" || instrType === "accion") && (
-            <Input label="Fecha *" type="date" value={form.transaction_date} onChange={e => setForm(f => ({ ...f, transaction_date: e.target.value }))} />
-          )}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
-            <Button variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button>
-            <Button onClick={() => addMutation.mutate()} disabled={!canSave() || addMutation.isPending}>
-              {addMutation.isPending ? "Guardando..." : "Guardar"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      <InvestmentFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        form={form}
+        setForm={setForm}
+        instrType={instrType}
+        setInstrType={setInstrType}
+        tickerDetection={tickerDetection}
+        setTickerDetection={setTickerDetection}
+        canSave={canSave}
+        isPending={addMutation.isPending}
+        onSubmit={() => addMutation.mutate()}
+      />
 
       <ConfirmModal
-        open={!!deleteId} title="Eliminar inversión"
+        open={!!deleteId}
+        title="Eliminar inversión"
         description="¿Estás seguro de que deseas eliminar esta inversión?"
         onCancel={() => setDeleteId(null)}
         onConfirm={() => { if (deleteId) deleteMutation.mutate(deleteId); }}
@@ -1219,13 +652,13 @@ export function Investments() {
       <RebalanceModal
         open={rebalanceOpen}
         onClose={() => setRebalanceOpen(false)}
-        positions={positions.map(p => ({
-          key: p.key,
-          name: p.name,
-          typeLabel: p.typeLabel,
-          typeColor: p.typeColor,
-          currentValue: currency === "ARS" ? p.actualArs : p.actualUsd,
-          currentWeight: p.weightPct / 100,
+        positions={positions.map((position) => ({
+          key: position.key,
+          name: position.name,
+          typeLabel: position.typeLabel,
+          typeColor: position.typeColor,
+          currentValue: currency === "ARS" ? position.actualArs : position.actualUsd,
+          currentWeight: position.weightPct / 100,
         }))}
         totalValue={dispAct}
         currency={currency}

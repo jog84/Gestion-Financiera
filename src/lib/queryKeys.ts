@@ -3,97 +3,78 @@
  * Usar QK.* en useQuery y INVALIDATE.* en useMutation.onSuccess.
  */
 
-const P = "default"; // profile_id hardcodeado hasta implementar multi-perfil
-
 export const QK = {
-  // ── Dashboard ─────────────────────────────────────────────────────────────
-  dashboard:        (year: number, month: number) => ["dashboard",            P, year, month] as const,
-  expenseBreakdown: (year: number, month: number) => ["expense_breakdown",    P, year, month] as const,
-  recentTx:         (limit: number)               => ["recent_transactions",  P, limit]        as const,
-
-  // ── Summary (comparte prefijo → invalidación parcial funciona para 6 y 12)
-  monthlySummary:   (months: number)              => ["monthly_summary",      P, months]       as const,
-
-  // ── Cashflow ──────────────────────────────────────────────────────────────
-  incomes:       (year: number, month: number) => ["incomes",        P, year, month] as const,
-  expenses:      (year: number, month: number) => ["expenses",       P, year, month] as const,
-  budgets:       (year: number, month: number) => ["budgets",        P, year, month] as const,
-  installments:  ()                            => ["installments",   P]               as const,
-  installmentCf: () => ["installment_cashflow", P] as const,
-  recurring:     ()                            => ["recurring",      P]               as const,
-
-  // ── Catálogos ─────────────────────────────────────────────────────────────
-  expenseCategories: () => ["expense_categories", P] as const,
-  incomeSources:     () => ["income_sources",      P] as const,
-
-  // ── Inversiones ───────────────────────────────────────────────────────────
-  investments:        () => ["investments",         P] as const,
-  portfolioSnapshots: () => ["portfolio_snapshots", P] as const,
-
-  // ── Patrimonio ────────────────────────────────────────────────────────────
-  assets:          ()             => ["assets",            P]         as const,
-  netWorthHistory: (days: number) => ["net_worth_history", P, days]   as const,
-
-  // ── Metas ─────────────────────────────────────────────────────────────────
-  goals:      ()               => ["goals",      P]      as const,
+  dashboard: (profileId: string, year: number, month: number) => ["dashboard", profileId, year, month] as const,
+  financialOverview: (profileId: string, year: number, month: number) => ["financial_overview", profileId, year, month] as const,
+  expenseBreakdown: (profileId: string, year: number, month: number) => ["expense_breakdown", profileId, year, month] as const,
+  recentTx: (profileId: string, limit: number) => ["recent_transactions", profileId, limit] as const,
+  monthlySummary: (profileId: string, months: number) => ["monthly_summary", profileId, months] as const,
+  incomes: (profileId: string, year: number, month: number) => ["incomes", profileId, year, month] as const,
+  expenses: (profileId: string, year: number, month: number) => ["expenses", profileId, year, month] as const,
+  budgets: (profileId: string, year: number, month: number) => ["budgets", profileId, year, month] as const,
+  installments: (profileId: string) => ["installments", profileId] as const,
+  installmentCf: (profileId: string) => ["installment_cashflow", profileId] as const,
+  recurring: (profileId: string) => ["recurring", profileId] as const,
+  expenseCategories: (profileId: string) => ["expense_categories", profileId] as const,
+  incomeSources: (profileId: string) => ["income_sources", profileId] as const,
+  investments: (profileId: string) => ["investments", profileId] as const,
+  portfolioSnapshots: (profileId: string) => ["portfolio_snapshots", profileId] as const,
+  financialAccounts: (profileId: string) => ["financial_accounts", profileId] as const,
+  cashOverview: (profileId: string) => ["cash_overview", profileId] as const,
+  assets: (profileId: string) => ["assets", profileId] as const,
+  netWorthHistory: (profileId: string, days: number) => ["net_worth_history", profileId, days] as const,
+  goals: (profileId: string) => ["goals", profileId] as const,
   milestones: (goalId: string) => ["milestones", goalId] as const,
-
-  // ── Alertas ───────────────────────────────────────────────────────────────
-  alerts: (unreadOnly: boolean) => ["alerts", P, unreadOnly] as const,
-
-  // ── Reportes ──────────────────────────────────────────────────────────────
-  annualReport: (year: number)                 => ["annual_report", P, year]            as const,
-  yoy:          (yearA: number, yearB: number) => ["yoy",           P, yearA, yearB]    as const,
-
-  // ── Settings ──────────────────────────────────────────────────────────────
-  themes:  () => ["themes",  P] as const,
-  profile: () => ["profile", P] as const,
-
+  alerts: (profileId: string, unreadOnly: boolean) => ["alerts", profileId, unreadOnly] as const,
+  annualReport: (profileId: string, year: number) => ["annual_report", profileId, year] as const,
+  yoy: (profileId: string, yearA: number, yearB: number) => ["yoy", profileId, yearA, yearB] as const,
+  themes: (profileId: string) => ["themes", profileId] as const,
+  profile: (profileId: string) => ["profile", profileId] as const,
   profileSettings: () => ["profile_settings"] as const,
-  dbLocation:      () => ["db_location"]      as const,
-  defaultProfile:  () => ["default-profile"]  as const,
+  dbLocation: () => ["db_location"] as const,
+  defaultProfile: () => ["default-profile"] as const,
 } as const;
 
-// ── Árbol de invalidación por entidad mutada ──────────────────────────────────
-// Devuelve un array de queryKeys a invalidar. Uso:
-//   for (const key of INVALIDATE.onExpenseChanged(year, month))
-//     qc.invalidateQueries({ queryKey: key });
-//
-// O más simple, usar el prefijo parcial donde alcanza:
-//   qc.invalidateQueries({ queryKey: ["monthly_summary", "default"] }) → invalida 6 y 12 meses
-
 export const INVALIDATE = {
-  onIncomeChanged: (year: number, month: number) => [
-    QK.incomes(year, month),
-    QK.dashboard(year, month),
-    QK.recentTx(8),
-    QK.annualReport(year),
+  onIncomeChanged: (profileId: string, year: number, month: number) => [
+    QK.incomes(profileId, year, month),
+    QK.dashboard(profileId, year, month),
+    QK.financialOverview(profileId, year, month),
+    QK.financialAccounts(profileId),
+    QK.cashOverview(profileId),
+    QK.recentTx(profileId, 8),
+    QK.annualReport(profileId, year),
   ] as const,
-
-  onExpenseChanged: (year: number, month: number) => [
-    QK.expenses(year, month),
-    QK.expenseBreakdown(year, month),
-    QK.dashboard(year, month),
-    QK.budgets(year, month),
-    QK.recentTx(8),
-    QK.annualReport(year),
+  onExpenseChanged: (profileId: string, year: number, month: number) => [
+    QK.expenses(profileId, year, month),
+    QK.expenseBreakdown(profileId, year, month),
+    QK.dashboard(profileId, year, month),
+    QK.financialOverview(profileId, year, month),
+    QK.financialAccounts(profileId),
+    QK.cashOverview(profileId),
+    QK.budgets(profileId, year, month),
+    QK.recentTx(profileId, 8),
+    QK.annualReport(profileId, year),
   ] as const,
-
-  onInvestmentChanged: () => [
-    QK.investments(),
-    QK.portfolioSnapshots(),
+  onInvestmentChanged: (profileId: string) => [
+    QK.investments(profileId),
+    QK.portfolioSnapshots(profileId),
   ] as const,
-
-  onAssetChanged: () => [
-    QK.assets(),
-    QK.netWorthHistory(90),
+  onAssetChanged: (profileId: string) => [
+    QK.assets(profileId),
+    QK.netWorthHistory(profileId, 90),
+    QK.financialOverview(profileId, new Date().getFullYear(), new Date().getMonth() + 1),
   ] as const,
-
-  onGoalChanged: () => [
-    QK.goals(),
+  onAccountChanged: (profileId: string) => [
+    QK.financialAccounts(profileId),
+    QK.cashOverview(profileId),
+    QK.financialOverview(profileId, new Date().getFullYear(), new Date().getMonth() + 1),
   ] as const,
-
-  onRecurringChanged: () => [
-    QK.recurring(),
+  onGoalChanged: (profileId: string) => [
+    QK.goals(profileId),
+  ] as const,
+  onRecurringChanged: (profileId: string) => [
+    QK.recurring(profileId),
+    QK.financialOverview(profileId, new Date().getFullYear(), new Date().getMonth() + 1),
   ] as const,
 } as const;

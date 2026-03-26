@@ -1,22 +1,11 @@
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use uuid::Uuid;
 
-use super::incomes::get_or_create_period;
-
-// ─── Portfolio snapshot ────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub struct PortfolioSnapshot {
-    pub id: String,
-    pub profile_id: String,
-    pub snapshot_date: String,
-    pub total_value_ars: f64,
-    pub total_value_usd: f64,
-    pub total_invested_ars: f64,
-    pub ccl: f64,
-}
+use crate::services::investments::{
+    create_investment as create_investment_entry, delete_investment as delete_investment_entry,
+    list_investments, list_portfolio_snapshots, save_portfolio_snapshot as persist_portfolio_snapshot,
+    update_investment_value as update_investment_quote, CreateInvestmentPayload, InvestmentEntry,
+    PortfolioSnapshot,
+};
 
 #[tauri::command]
 pub async fn save_portfolio_snapshot(
@@ -27,30 +16,15 @@ pub async fn save_portfolio_snapshot(
     total_invested_ars: f64,
     ccl: f64,
 ) -> Result<(), String> {
-    let id = Uuid::new_v4().to_string();
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-
-    sqlx::query(
-        "INSERT INTO portfolio_snapshots (id, profile_id, snapshot_date, total_value_ars, total_value_usd, total_invested_ars, ccl)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(profile_id, snapshot_date) DO UPDATE SET
-             total_value_ars = excluded.total_value_ars,
-             total_value_usd = excluded.total_value_usd,
-             total_invested_ars = excluded.total_invested_ars,
-             ccl = excluded.ccl",
+    persist_portfolio_snapshot(
+        pool.inner(),
+        &profile_id,
+        total_value_ars,
+        total_value_usd,
+        total_invested_ars,
+        ccl,
     )
-    .bind(&id)
-    .bind(&profile_id)
-    .bind(&today)
-    .bind(total_value_ars)
-    .bind(total_value_usd)
-    .bind(total_invested_ars)
-    .bind(ccl)
-    .execute(pool.inner())
     .await
-    .map_err(|e| e.to_string())?;
-
-    Ok(())
 }
 
 #[tauri::command]
@@ -59,64 +33,7 @@ pub async fn get_portfolio_snapshots(
     profile_id: String,
     limit_days: Option<i64>,
 ) -> Result<Vec<PortfolioSnapshot>, String> {
-    let days = limit_days.unwrap_or(730);
-    let cutoff = chrono::Local::now()
-        .checked_sub_signed(chrono::Duration::days(days))
-        .unwrap_or_else(chrono::Local::now)
-        .format("%Y-%m-%d")
-        .to_string();
-
-    sqlx::query_as::<_, PortfolioSnapshot>(
-        "SELECT id, profile_id, snapshot_date, total_value_ars, total_value_usd, total_invested_ars, ccl
-         FROM portfolio_snapshots
-         WHERE profile_id = ? AND snapshot_date >= ?
-         ORDER BY snapshot_date ASC",
-    )
-    .bind(&profile_id)
-    .bind(&cutoff)
-    .fetch_all(pool.inner())
-    .await
-    .map_err(|e| e.to_string())
-}
-
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub struct InvestmentEntry {
-    pub id: String,
-    pub profile_id: String,
-    pub period_id: String,
-    pub name: String,
-    pub ticker: Option<String>,
-    pub amount_invested: f64,
-    pub current_value: Option<f64>,
-    pub transaction_date: String,
-    pub notes: Option<String>,
-    pub quantity: Option<f64>,
-    pub price_ars: Option<f64>,
-    pub dolar_ccl: Option<f64>,
-    pub current_price_ars: Option<f64>,
-    pub instrument_type: String,
-    pub tna: Option<f64>,
-    pub plazo_dias: Option<i64>,
-    pub fecha_vencimiento: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateInvestmentPayload {
-    pub profile_id: String,
-    pub name: String,
-    pub ticker: Option<String>,
-    pub amount_invested: f64,
-    pub current_value: Option<f64>,
-    pub transaction_date: String,
-    pub notes: Option<String>,
-    pub quantity: Option<f64>,
-    pub price_ars: Option<f64>,
-    pub dolar_ccl: Option<f64>,
-    pub current_price_ars: Option<f64>,
-    pub instrument_type: Option<String>,
-    pub tna: Option<f64>,
-    pub plazo_dias: Option<i64>,
-    pub fecha_vencimiento: Option<String>,
+    list_portfolio_snapshots(pool.inner(), &profile_id, limit_days).await
 }
 
 #[tauri::command]
@@ -124,17 +41,7 @@ pub async fn get_investments(
     pool: tauri::State<'_, SqlitePool>,
     profile_id: String,
 ) -> Result<Vec<InvestmentEntry>, String> {
-    sqlx::query_as::<_, InvestmentEntry>(
-        "SELECT id, profile_id, period_id, name, ticker, amount_invested, current_value,
-                transaction_date, notes, quantity, price_ars, dolar_ccl, current_price_ars,
-                COALESCE(instrument_type, 'cedear') as instrument_type,
-                tna, plazo_dias, fecha_vencimiento
-         FROM investment_entries WHERE profile_id = ? ORDER BY transaction_date DESC",
-    )
-    .bind(&profile_id)
-    .fetch_all(pool.inner())
-    .await
-    .map_err(|e| e.to_string())
+    list_investments(pool.inner(), &profile_id).await
 }
 
 #[tauri::command]
@@ -142,53 +49,7 @@ pub async fn create_investment(
     pool: tauri::State<'_, SqlitePool>,
     payload: CreateInvestmentPayload,
 ) -> Result<InvestmentEntry, String> {
-    let id = Uuid::new_v4().to_string();
-    let now = Utc::now().to_rfc3339();
-    let period_id =
-        get_or_create_period(pool.inner(), &payload.profile_id, &payload.transaction_date).await?;
-    let instrument_type = payload.instrument_type.unwrap_or_else(|| "cedear".to_string());
-
-    sqlx::query(
-        "INSERT INTO investment_entries
-            (id, profile_id, period_id, name, ticker, amount_invested, current_value,
-             transaction_date, notes, origin, quantity, price_ars, dolar_ccl, current_price_ars,
-             instrument_type, tna, plazo_dias, fecha_vencimiento, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(&payload.profile_id)
-    .bind(&period_id)
-    .bind(&payload.name)
-    .bind(&payload.ticker)
-    .bind(payload.amount_invested)
-    .bind(payload.current_value)
-    .bind(&payload.transaction_date)
-    .bind(&payload.notes)
-    .bind(payload.quantity)
-    .bind(payload.price_ars)
-    .bind(payload.dolar_ccl)
-    .bind(payload.current_price_ars)
-    .bind(&instrument_type)
-    .bind(payload.tna)
-    .bind(payload.plazo_dias)
-    .bind(&payload.fecha_vencimiento)
-    .bind(&now)
-    .bind(&now)
-    .execute(pool.inner())
-    .await
-    .map_err(|e| e.to_string())?;
-
-    sqlx::query_as::<_, InvestmentEntry>(
-        "SELECT id, profile_id, period_id, name, ticker, amount_invested, current_value,
-                transaction_date, notes, quantity, price_ars, dolar_ccl, current_price_ars,
-                COALESCE(instrument_type, 'cedear') as instrument_type,
-                tna, plazo_dias, fecha_vencimiento
-         FROM investment_entries WHERE id = ?",
-    )
-    .bind(&id)
-    .fetch_one(pool.inner())
-    .await
-    .map_err(|e| e.to_string())
+    create_investment_entry(pool.inner(), payload).await
 }
 
 #[tauri::command]
@@ -198,18 +59,7 @@ pub async fn update_investment_value(
     current_value: f64,
     current_price_ars: Option<f64>,
 ) -> Result<(), String> {
-    let now = Utc::now().to_rfc3339();
-    sqlx::query(
-        "UPDATE investment_entries SET current_value = ?, current_price_ars = ?, updated_at = ? WHERE id = ?",
-    )
-    .bind(current_value)
-    .bind(current_price_ars)
-    .bind(&now)
-    .bind(&id)
-    .execute(pool.inner())
-    .await
-    .map_err(|e| e.to_string())?;
-    Ok(())
+    update_investment_quote(pool.inner(), &id, current_value, current_price_ars).await
 }
 
 #[tauri::command]
@@ -217,10 +67,5 @@ pub async fn delete_investment(
     pool: tauri::State<'_, SqlitePool>,
     id: String,
 ) -> Result<(), String> {
-    sqlx::query("DELETE FROM investment_entries WHERE id = ?")
-        .bind(&id)
-        .execute(pool.inner())
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    delete_investment_entry(pool.inner(), &id).await
 }

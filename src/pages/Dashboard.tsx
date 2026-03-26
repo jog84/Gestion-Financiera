@@ -1,15 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, ArrowDownRight, BarChart2, ShoppingBag, Receipt } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, BarChart2, ShoppingBag, Receipt, ShieldAlert } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid,
 } from "recharts";
 import { MonthSelector } from "@/components/MonthSelector";
 import {
-  getFinancialOverview, getMonthlySummary, getExpenseBreakdown, getRecentTransactions,
+  checkFinancialAlerts, getExpenseBreakdown, getFinancialInsights, getFinancialOverview, getFinancialRecommendations, getMonthlySummary, getRecentTransactions,
 } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { QK } from "@/lib/queryKeys";
@@ -176,14 +176,29 @@ function ChartTip({ active, payload, label }: { active?: boolean; payload?: { va
 export function Dashboard() {
   const { profileId } = useProfile();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
   const { data: overview,       isLoading: ls } = useQuery({ queryKey: QK.financialOverview(profileId, year, month), queryFn: () => getFinancialOverview(profileId, year, month) });
+  const { data: insights = [],  isLoading: li } = useQuery({ queryKey: QK.financialInsights(profileId, year, month), queryFn: () => getFinancialInsights(profileId, year, month) });
+  const { data: recommendations = [], isLoading: lrec } = useQuery({ queryKey: QK.financialRecommendations(profileId, year, month), queryFn: () => getFinancialRecommendations(profileId, year, month) });
   const { data: monthly = [],    isLoading: lm } = useQuery({ queryKey: QK.monthlySummary(profileId, 6),          queryFn: () => getMonthlySummary(profileId, 6) });
   const { data: breakdown = [],  isLoading: lb } = useQuery({ queryKey: QK.expenseBreakdown(profileId, year, month), queryFn: () => getExpenseBreakdown(profileId, year, month) });
   const { data: recent = [],     isLoading: lr } = useQuery({ queryKey: QK.recentTx(profileId, 8),               queryFn: () => getRecentTransactions(profileId, 8) });
+
+  useEffect(() => {
+    let cancelled = false;
+    void checkFinancialAlerts(profileId, year, month).then(() => {
+      if (!cancelled) {
+        qc.invalidateQueries({ queryKey: ["alerts", profileId] });
+      }
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [profileId, year, month, qc]);
 
   const income         = overview?.total_income ?? 0;
   const expenses       = overview?.total_expenses ?? 0;
@@ -329,8 +344,142 @@ export function Dashboard() {
         )}
       </div>
 
+      <div className="animate-fade-in-up delay-100" style={{ marginBottom: "12px" }}>
+        <CardShell
+          title="Insights accionables"
+          subtitle="Señales automáticas sobre liquidez, cashflow y riesgo de concentración"
+          right={
+            insights.length > 0 ? (
+              <Pill color="var(--warning)" bg="var(--warning-dim)">{insights.length} activos</Pill>
+            ) : undefined
+          }
+        >
+          {li ? (
+            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
+              <Skel h={110} r={8} />
+              <Skel h={110} r={8} />
+              <Skel h={110} r={8} />
+            </div>
+          ) : insights.length === 0 ? (
+            <EmptyState
+              h={120}
+              icon={<ShieldAlert size={18} />}
+              text="Sin alertas financieras críticas"
+              sub="La liquidez, el cashflow y la concentración no muestran desvíos fuertes este mes."
+            />
+          ) : (
+            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
+              {insights.slice(0, 3).map((insight) => {
+                const tone = insight.severity === "high"
+                  ? { fg: "var(--danger)", bg: "var(--danger-dim)" }
+                  : insight.severity === "medium"
+                    ? { fg: "var(--warning)", bg: "var(--warning-dim)" }
+                    : { fg: "var(--primary)", bg: "rgba(67,97,238,0.12)" };
+                return (
+                  <div key={insight.id} style={{ border: "1px solid var(--border)", borderRadius: "12px", padding: "16px", background: "var(--surface-2)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                      <Pill color={tone.fg} bg={tone.bg}>
+                        {insight.severity === "high" ? "Alta prioridad" : insight.severity === "medium" ? "Atención" : "Seguimiento"}
+                      </Pill>
+                      {insight.metric_value !== null ? (
+                        <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 600 }}>
+                          {insight.kind === "low_liquidity"
+                            ? `${insight.metric_value.toFixed(1)}m`
+                            : insight.kind === "portfolio_concentration" || insight.kind === "fixed_expense_pressure"
+                              ? `${insight.metric_value.toFixed(0)}%`
+                              : formatCurrency(Math.abs(insight.metric_value))}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text)", marginBottom: "6px" }}>{insight.title}</div>
+                    <div style={{ fontSize: "12px", color: "var(--text-3)", lineHeight: 1.5, minHeight: "54px" }}>{insight.body}</div>
+                    {insight.action_route && insight.action_label ? (
+                      <button
+                        onClick={() => navigate(insight.action_route!)}
+                        style={{
+                          marginTop: "12px",
+                          padding: "7px 10px",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          color: "var(--primary)",
+                          background: "rgba(67,97,238,0.1)",
+                          border: "1px solid rgba(67,97,238,0.2)",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                          fontFamily: "var(--font-ui)",
+                        }}
+                      >
+                        {insight.action_label} →
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardShell>
+      </div>
+
+      <div className="animate-fade-in-up delay-150" style={{ marginBottom: "12px" }}>
+        <CardShell
+          title="Recomendaciones"
+          subtitle="Acciones sugeridas para mejorar ahorro, gasto y diversificación"
+        >
+          {lrec ? (
+            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
+              <Skel h={120} r={8} />
+              <Skel h={120} r={8} />
+              <Skel h={120} r={8} />
+            </div>
+          ) : recommendations.length === 0 ? (
+            <EmptyState
+              h={120}
+              icon={<BarChart2 size={18} />}
+              text="Sin recomendaciones relevantes"
+              sub="Todavía no veo una acción con impacto claro por encima del ruido normal."
+            />
+          ) : (
+            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
+              {recommendations.slice(0, 3).map((recommendation) => (
+                <div key={recommendation.id} style={{ border: "1px solid var(--border)", borderRadius: "12px", padding: "16px", background: "var(--surface-2)" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text)", marginBottom: "6px" }}>{recommendation.title}</div>
+                  <div style={{ fontSize: "12px", color: "var(--text-3)", lineHeight: 1.5, minHeight: "56px" }}>{recommendation.summary}</div>
+                  <div style={{ marginTop: "10px", padding: "10px 12px", borderRadius: "10px", background: "rgba(67,97,238,0.08)", border: "1px solid rgba(67,97,238,0.16)" }}>
+                    <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-3)", marginBottom: "4px" }}>
+                      {recommendation.impact_label}
+                    </div>
+                    <div style={{ fontSize: "18px", fontWeight: 700, color: "var(--primary)" }}>
+                      {formatCurrency(recommendation.impact_value)}
+                    </div>
+                  </div>
+                  {recommendation.action_route && recommendation.action_label ? (
+                    <button
+                      onClick={() => navigate(recommendation.action_route!)}
+                      style={{
+                        marginTop: "12px",
+                        padding: "7px 10px",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        color: "var(--primary)",
+                        background: "rgba(67,97,238,0.1)",
+                        border: "1px solid rgba(67,97,238,0.2)",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontFamily: "var(--font-ui)",
+                      }}
+                    >
+                      {recommendation.action_label} →
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardShell>
+      </div>
+
       {/* Charts row */}
-      <div className="animate-fade-in-up delay-100" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: "12px", marginBottom: "12px" }}>
+      <div className="animate-fade-in-up delay-200" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: "12px", marginBottom: "12px" }}>
 
         <div style={{ padding: "1px", background: "linear-gradient(90deg, var(--success), var(--danger))", borderRadius: "11px" }}>
           <CardShell
@@ -431,7 +580,7 @@ export function Dashboard() {
       </div>
 
       {/* Transactions */}
-      <div className="animate-fade-in-up delay-200">
+      <div className="animate-fade-in-up delay-300">
         <CardShell
           title="Últimas transacciones"
         subtitle={recent.length > 0 ? `${recent.length} movimientos recientes` : undefined}

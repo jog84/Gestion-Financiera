@@ -5,7 +5,9 @@ import type {
   AssetSnapshot, FinancialAccount, CashOverview, GoalEntry, PortfolioSnapshot,
   RecurringTransaction, AppliedRecurring, CategoryBudget,
   Alert, NetWorthPoint, GoalMilestone, CustomTheme, FinancialOverview,
-  YoyComparison, InstallmentCashflowPoint,
+  YoyComparison, InstallmentCashflowPoint, FinancialTransfer,
+  AccountLedgerEntry, AccountBalancePoint,
+  FinancialInsight, FinancialRecommendation,
 } from "@/types";
 
 // ── Profiles ──────────────────────────────────────────────────────────────────
@@ -77,6 +79,15 @@ export const getDashboardSummary = (profileId: string, year: number, month: numb
 
 export const getFinancialOverview = (profileId: string, year: number, month: number) =>
   invoke<FinancialOverview>("get_financial_overview", { profileId, year, month });
+
+export const getFinancialInsights = (profileId: string, year: number, month: number) =>
+  invoke<FinancialInsight[]>("get_financial_insights", { profileId, year, month });
+
+export const checkFinancialAlerts = (profileId: string, year: number, month: number) =>
+  invoke<FinancialInsight[]>("check_financial_alerts", { profileId, year, month });
+
+export const getFinancialRecommendations = (profileId: string, year: number, month: number) =>
+  invoke<FinancialRecommendation[]>("get_financial_recommendations", { profileId, year, month });
 
 export interface MonthlySummary { year: number; month: number; total_income: number; total_expenses: number; }
 export interface CategoryBreakdown { category_id: string | null; category_name: string; total: number; }
@@ -226,6 +237,28 @@ export const deleteFinancialAccount = (id: string) => invoke<void>("delete_finan
 
 export const getCashOverview = (profileId: string) =>
   invoke<CashOverview>("get_cash_overview", { profileId });
+
+export const getFinancialTransfers = (profileId: string, limit = 20) =>
+  invoke<FinancialTransfer[]>("get_financial_transfers", { profileId, limit });
+
+export const createFinancialTransfer = (payload: {
+  profile_id: string;
+  from_account_id: string;
+  to_account_id: string;
+  amount: number;
+  transfer_date: string;
+  description?: string | null;
+  notes?: string | null;
+}) => invoke<FinancialTransfer>("create_financial_transfer", { payload });
+
+export const deleteFinancialTransfer = (id: string) =>
+  invoke<void>("delete_financial_transfer", { id });
+
+export const getAccountLedger = (profileId: string, accountId: string, limit = 25) =>
+  invoke<AccountLedgerEntry[]>("get_account_ledger", { profileId, accountId, limit });
+
+export const getAccountBalanceHistory = (profileId: string, accountId: string, days = 30) =>
+  invoke<AccountBalancePoint[]>("get_account_balance_history", { profileId, accountId, days });
 
 // ── Goals ─────────────────────────────────────────────────────────────────────
 

@@ -5,12 +5,12 @@ mod services;
 use tauri::Manager;
 
 use commands::{
-    accounts::{create_financial_account, delete_financial_account, get_cash_overview, get_financial_accounts, update_financial_account},
+    accounts::{create_financial_account, create_financial_transfer, delete_financial_account, delete_financial_transfer, get_account_balance_history, get_account_ledger, get_cash_overview, get_financial_accounts, get_financial_transfers, update_financial_account},
     alerts::{get_alerts, create_alert, mark_alert_read, mark_all_alerts_read, delete_alert, check_budget_alerts},
     assets::{create_asset, delete_asset, get_assets, update_asset},
     budgets::{get_budgets, upsert_budget, delete_budget},
     charts::{get_expense_breakdown, get_monthly_summary, get_installment_cashflow},
-    dashboard::{get_dashboard_summary, get_financial_overview},
+    dashboard::{check_financial_alerts, get_dashboard_summary, get_financial_insights, get_financial_overview, get_financial_recommendations},
     expenses::{create_expense, delete_expense, get_expenses, update_expense},
     goals::{create_goal, delete_goal, get_goals, update_goal_amount, update_goal_status},
     incomes::{create_income, delete_income, get_incomes, update_income},
@@ -61,6 +61,11 @@ pub fn run() {
             update_financial_account,
             delete_financial_account,
             get_cash_overview,
+            get_financial_transfers,
+            create_financial_transfer,
+            delete_financial_transfer,
+            get_account_ledger,
+            get_account_balance_history,
             // Incomes
             get_incomes,
             create_income,
@@ -74,6 +79,9 @@ pub fn run() {
             // Dashboard & Charts
             get_dashboard_summary,
             get_financial_overview,
+            get_financial_insights,
+            get_financial_recommendations,
+            check_financial_alerts,
             get_monthly_summary,
             get_expense_breakdown,
             get_installment_cashflow,

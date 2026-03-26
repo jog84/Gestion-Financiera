@@ -1,5 +1,7 @@
 use serde::Serialize;
 use sqlx::SqlitePool;
+use chrono::Utc;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
 pub struct DashboardSummary {
@@ -74,6 +76,29 @@ pub struct YoyComparison {
     pub total_expenses_b: f64,
     pub income_diff: f64,
     pub expenses_diff: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FinancialInsight {
+    pub id: String,
+    pub kind: String,
+    pub severity: String,
+    pub title: String,
+    pub body: String,
+    pub action_label: Option<String>,
+    pub action_route: Option<String>,
+    pub metric_value: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FinancialRecommendation {
+    pub id: String,
+    pub title: String,
+    pub summary: String,
+    pub impact_label: String,
+    pub impact_value: f64,
+    pub action_label: Option<String>,
+    pub action_route: Option<String>,
 }
 
 const MONTH_NAMES: [&str; 12] = [
@@ -198,6 +223,77 @@ pub async fn get_financial_overview(
             None
         },
     })
+}
+
+pub async fn get_financial_insights(
+    pool: &SqlitePool,
+    profile_id: &str,
+    year: i64,
+    month: i64,
+) -> Result<Vec<FinancialInsight>, String> {
+    let overview = get_financial_overview(pool, profile_id, year, month).await?;
+    let insights = build_financial_insights(pool, profile_id, year, month, &overview).await?;
+    Ok(insights)
+}
+
+pub async fn check_financial_alerts(
+    pool: &SqlitePool,
+    profile_id: &str,
+    year: i64,
+    month: i64,
+) -> Result<Vec<FinancialInsight>, String> {
+    let overview = get_financial_overview(pool, profile_id, year, month).await?;
+    let insights = build_financial_insights(pool, profile_id, year, month, &overview).await?;
+    let month_key = format!("{year:04}-{month:02}");
+    let now = Utc::now().to_rfc3339();
+
+    for insight in &insights {
+        if !matches!(insight.kind.as_str(), "low_liquidity" | "negative_cashflow" | "portfolio_concentration") {
+            continue;
+        }
+
+        let ref_id = format!("{}:{month_key}", insight.kind);
+        let existing: Option<(String,)> = sqlx::query_as(
+            "SELECT id FROM alerts WHERE profile_id = ? AND kind = ? AND ref_id = ?",
+        )
+        .bind(profile_id)
+        .bind(&insight.kind)
+        .bind(&ref_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if existing.is_some() {
+            continue;
+        }
+
+        sqlx::query(
+            "INSERT INTO alerts (id, profile_id, kind, title, body, ref_id, ref_type, is_read, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'financial_insight', 0, ?)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(profile_id)
+        .bind(&insight.kind)
+        .bind(&insight.title)
+        .bind(&insight.body)
+        .bind(&ref_id)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(insights)
+}
+
+pub async fn get_financial_recommendations(
+    pool: &SqlitePool,
+    profile_id: &str,
+    year: i64,
+    month: i64,
+) -> Result<Vec<FinancialRecommendation>, String> {
+    let overview = get_financial_overview(pool, profile_id, year, month).await?;
+    build_financial_recommendations(pool, profile_id, year, month, &overview).await
 }
 
 pub async fn get_recent_transactions(
@@ -356,4 +452,220 @@ async fn get_month_totals(
     .map_err(|e| e.to_string())?;
 
     Ok((total_income, total_expenses))
+}
+
+async fn build_financial_insights(
+    pool: &SqlitePool,
+    profile_id: &str,
+    year: i64,
+    month: i64,
+    overview: &FinancialOverview,
+) -> Result<Vec<FinancialInsight>, String> {
+    let mut insights = Vec::new();
+
+    if let Some(liquidity_months) = overview.liquidity_months {
+        if liquidity_months < 3.0 {
+            let severity = if liquidity_months < 1.0 { "high" } else { "medium" };
+            insights.push(FinancialInsight {
+                id: "low_liquidity".to_string(),
+                kind: "low_liquidity".to_string(),
+                severity: severity.to_string(),
+                title: "Colchón de liquidez bajo".to_string(),
+                body: format!(
+                    "Tu liquidez cubre {:.1} meses de gastos fijos. El objetivo mínimo recomendable es 3 meses.",
+                    liquidity_months
+                ),
+                action_label: Some("Revisar cuentas".to_string()),
+                action_route: Some("/accounts".to_string()),
+                metric_value: Some(liquidity_months),
+            });
+        }
+    }
+
+    if overview.balance < 0.0 {
+        insights.push(FinancialInsight {
+            id: "negative_cashflow".to_string(),
+            kind: "negative_cashflow".to_string(),
+            severity: if overview.savings_rate < -10.0 { "high" } else { "medium" }.to_string(),
+            title: "Mes con cashflow negativo".to_string(),
+            body: format!(
+                "Tus gastos superan a tus ingresos por {} en {:02}/{}.",
+                format_currencyish(overview.balance.abs()),
+                month,
+                year
+            ),
+            action_label: Some("Ver gastos".to_string()),
+            action_route: Some("/expenses".to_string()),
+            metric_value: Some(overview.balance),
+        });
+    }
+
+    if overview.total_income > 0.0 && overview.monthly_fixed_expenses / overview.total_income >= 0.7 {
+        let fixed_ratio = overview.monthly_fixed_expenses / overview.total_income * 100.0;
+        insights.push(FinancialInsight {
+            id: "fixed_expense_pressure".to_string(),
+            kind: "fixed_expense_pressure".to_string(),
+            severity: if fixed_ratio >= 85.0 { "high" } else { "medium" }.to_string(),
+            title: "Carga fija muy alta".to_string(),
+            body: format!(
+                "Tus gastos fijos consumen {:.0}% de tus ingresos del mes. Hay poco margen para ahorro o inversión.",
+                fixed_ratio
+            ),
+            action_label: Some("Analizar presupuesto".to_string()),
+            action_route: Some("/reports".to_string()),
+            metric_value: Some(fixed_ratio),
+        });
+    }
+
+    let positions: Vec<(String, f64)> = sqlx::query_as(
+        "SELECT COALESCE(NULLIF(TRIM(name), ''), 'Activo sin nombre'), COALESCE(current_value, amount_invested)
+         FROM investment_entries
+         WHERE profile_id = ?",
+    )
+    .bind(profile_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let total_invested_value: f64 = positions.iter().map(|(_, value)| *value).sum();
+    if total_invested_value > 0.0 {
+        let mut by_name = std::collections::BTreeMap::<String, f64>::new();
+        for (name, value) in positions {
+            let entry = by_name.entry(name).or_insert(0.0);
+            *entry += value;
+        }
+
+        if let Some((name, value)) = by_name.iter().max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal)) {
+            let concentration = value / total_invested_value * 100.0;
+            if concentration >= 50.0 {
+                insights.push(FinancialInsight {
+                    id: "portfolio_concentration".to_string(),
+                    kind: "portfolio_concentration".to_string(),
+                    severity: if concentration >= 65.0 { "high" } else { "medium" }.to_string(),
+                    title: "Portfolio demasiado concentrado".to_string(),
+                    body: format!(
+                        "{} representa {:.0}% del capital invertido. Considera diversificar para bajar riesgo específico.",
+                        name,
+                        concentration
+                    ),
+                    action_label: Some("Revisar inversiones".to_string()),
+                    action_route: Some("/investments".to_string()),
+                    metric_value: Some(concentration),
+                });
+            }
+        }
+    }
+
+    Ok(insights)
+}
+
+async fn build_financial_recommendations(
+    pool: &SqlitePool,
+    profile_id: &str,
+    year: i64,
+    month: i64,
+    overview: &FinancialOverview,
+) -> Result<Vec<FinancialRecommendation>, String> {
+    let mut recommendations = Vec::new();
+
+    let top_expense_categories: Vec<(String, f64)> = sqlx::query_as(
+        r#"SELECT COALESCE(ec.name, 'Sin categoría') AS category_name, COALESCE(SUM(ee.amount), 0.0) AS total
+           FROM expense_entries ee
+           JOIN periods p ON ee.period_id = p.id
+           LEFT JOIN expense_categories ec ON ee.category_id = ec.id
+           WHERE ee.profile_id = ? AND p.year = ? AND p.month = ?
+           GROUP BY COALESCE(ec.name, 'Sin categoría')
+           ORDER BY total DESC
+           LIMIT 1"#,
+    )
+    .bind(profile_id)
+    .bind(year)
+    .bind(month)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if let Some((category_name, total)) = top_expense_categories.first() {
+        let suggested_cut = total * 0.15;
+        if suggested_cut > 0.0 {
+            recommendations.push(FinancialRecommendation {
+                id: "expense_cut".to_string(),
+                title: format!("Ajustar {}", category_name),
+                summary: format!(
+                    "{} fue tu categoría más pesada del mes. Un recorte del 15% liberaría flujo sin tocar toda la estructura de gasto.",
+                    category_name
+                ),
+                impact_label: "Ahorro potencial mensual".to_string(),
+                impact_value: suggested_cut,
+                action_label: Some("Revisar gastos".to_string()),
+                action_route: Some("/expenses".to_string()),
+            });
+        }
+    }
+
+    if overview.total_income > 0.0 {
+        let target_savings = overview.total_income * 0.20;
+        let current_savings = (overview.total_income - overview.total_expenses).max(0.0);
+        let gap = (target_savings - current_savings).max(0.0);
+        if gap > 0.0 {
+            recommendations.push(FinancialRecommendation {
+                id: "savings_target".to_string(),
+                title: "Cerrar brecha de ahorro".to_string(),
+                summary: format!(
+                    "Para llegar a una tasa de ahorro del 20%, te conviene reservar {} adicionales este mes.",
+                    format_currencyish(gap)
+                ),
+                impact_label: "Aporte sugerido".to_string(),
+                impact_value: gap,
+                action_label: Some("Ver dashboard".to_string()),
+                action_route: Some("/".to_string()),
+            });
+        }
+    }
+
+    let positions: Vec<(String, f64)> = sqlx::query_as(
+        "SELECT COALESCE(NULLIF(TRIM(name), ''), 'Activo sin nombre'), COALESCE(current_value, amount_invested)
+         FROM investment_entries
+         WHERE profile_id = ?",
+    )
+    .bind(profile_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let total_portfolio: f64 = positions.iter().map(|(_, value)| *value).sum();
+    if total_portfolio > 0.0 {
+        let mut by_name = std::collections::BTreeMap::<String, f64>::new();
+        for (name, value) in positions {
+            let entry = by_name.entry(name).or_insert(0.0);
+            *entry += value;
+        }
+
+        if let Some((largest_name, largest_value)) = by_name.iter().max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal)) {
+            let concentration = largest_value / total_portfolio;
+            let target_weight = 0.35;
+            if concentration > target_weight {
+                let rebalance_amount = largest_value - total_portfolio * target_weight;
+                recommendations.push(FinancialRecommendation {
+                    id: "rebalance_position".to_string(),
+                    title: format!("Rebalancear {}", largest_name),
+                    summary: format!(
+                        "{} pesa {:.0}% del portfolio. Bajarla hacia 35% reduce dependencia de un solo activo.",
+                        largest_name,
+                        concentration * 100.0
+                    ),
+                    impact_label: "Monto a reasignar".to_string(),
+                    impact_value: rebalance_amount.max(0.0),
+                    action_label: Some("Ir a inversiones".to_string()),
+                    action_route: Some("/investments".to_string()),
+                });
+            }
+        }
+    }
+
+    Ok(recommendations)
+}
+
+fn format_currencyish(value: f64) -> String {
+    format!("${:.0}", value)
 }

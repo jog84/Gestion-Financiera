@@ -10,6 +10,9 @@ function alertIcon(kind: AlertKind) {
   if (kind === "budget_exceeded") return <AlertCircle size={14} style={{ color: "var(--danger)", flexShrink: 0 }} />;
   if (kind === "budget_warning") return <AlertTriangle size={14} style={{ color: "var(--warning)", flexShrink: 0 }} />;
   if (kind === "goal_reached" || kind === "goal_milestone") return <Target size={14} style={{ color: "var(--success)", flexShrink: 0 }} />;
+  if (kind === "low_liquidity" || kind === "negative_cashflow" || kind === "portfolio_concentration") {
+    return <AlertTriangle size={14} style={{ color: "var(--warning)", flexShrink: 0 }} />;
+  }
   return <Info size={14} style={{ color: "var(--primary)", flexShrink: 0 }} />;
 }
 
@@ -18,6 +21,9 @@ function alertRoute(kind: AlertKind): string {
   if (kind.startsWith("goal")) return "/goals";
   if (kind === "installment_due") return "/installments";
   if (kind === "price_target") return "/investments";
+  if (kind === "low_liquidity") return "/accounts";
+  if (kind === "negative_cashflow") return "/expenses";
+  if (kind === "portfolio_concentration") return "/investments";
   return "/";
 }
 

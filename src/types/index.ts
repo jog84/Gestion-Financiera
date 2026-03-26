@@ -147,6 +147,37 @@ export interface CashOverview {
   liquid_account_count: number;
 }
 
+export interface FinancialTransfer {
+  id: string;
+  profile_id: string;
+  from_account_id: string;
+  from_account_name: string;
+  to_account_id: string;
+  to_account_name: string;
+  amount: number;
+  transfer_date: string;
+  description: string | null;
+  notes: string | null;
+}
+
+export interface AccountLedgerEntry {
+  id: string;
+  account_id: string;
+  account_name: string;
+  entry_type: string;
+  direction: "in" | "out";
+  amount: number;
+  entry_date: string;
+  description: string | null;
+  counterparty: string | null;
+  origin: string | null;
+}
+
+export interface AccountBalancePoint {
+  date: string;
+  balance: number;
+}
+
 export interface GoalEntry {
   id: string;
   profile_id: string;
@@ -179,6 +210,27 @@ export interface FinancialOverview {
   physical_assets: number;
   monthly_fixed_expenses: number;
   liquidity_months: number | null;
+}
+
+export interface FinancialInsight {
+  id: string;
+  kind: "low_liquidity" | "negative_cashflow" | "portfolio_concentration" | "fixed_expense_pressure";
+  severity: "low" | "medium" | "high";
+  title: string;
+  body: string;
+  action_label: string | null;
+  action_route: string | null;
+  metric_value: number | null;
+}
+
+export interface FinancialRecommendation {
+  id: string;
+  title: string;
+  summary: string;
+  impact_label: string;
+  impact_value: number;
+  action_label: string | null;
+  action_route: string | null;
 }
 
 // ── Recurring transactions ────────────────────────────────────────────────────
@@ -236,7 +288,10 @@ export type AlertKind =
   | 'goal_reached'
   | 'goal_milestone'
   | 'installment_due'
-  | 'price_target';
+  | 'price_target'
+  | 'low_liquidity'
+  | 'negative_cashflow'
+  | 'portfolio_concentration';
 
 export interface Alert {
   id: string;

@@ -6,6 +6,8 @@
 export const QK = {
   dashboard: (profileId: string, year: number, month: number) => ["dashboard", profileId, year, month] as const,
   financialOverview: (profileId: string, year: number, month: number) => ["financial_overview", profileId, year, month] as const,
+  financialInsights: (profileId: string, year: number, month: number) => ["financial_insights", profileId, year, month] as const,
+  financialRecommendations: (profileId: string, year: number, month: number) => ["financial_recommendations", profileId, year, month] as const,
   expenseBreakdown: (profileId: string, year: number, month: number) => ["expense_breakdown", profileId, year, month] as const,
   recentTx: (profileId: string, limit: number) => ["recent_transactions", profileId, limit] as const,
   monthlySummary: (profileId: string, months: number) => ["monthly_summary", profileId, months] as const,
@@ -21,6 +23,9 @@ export const QK = {
   portfolioSnapshots: (profileId: string) => ["portfolio_snapshots", profileId] as const,
   financialAccounts: (profileId: string) => ["financial_accounts", profileId] as const,
   cashOverview: (profileId: string) => ["cash_overview", profileId] as const,
+  financialTransfers: (profileId: string, limit: number) => ["financial_transfers", profileId, limit] as const,
+  accountLedger: (profileId: string, accountId: string, limit: number) => ["account_ledger", profileId, accountId, limit] as const,
+  accountBalanceHistory: (profileId: string, accountId: string, days: number) => ["account_balance_history", profileId, accountId, days] as const,
   assets: (profileId: string) => ["assets", profileId] as const,
   netWorthHistory: (profileId: string, days: number) => ["net_worth_history", profileId, days] as const,
   goals: (profileId: string) => ["goals", profileId] as const,
@@ -68,6 +73,7 @@ export const INVALIDATE = {
   onAccountChanged: (profileId: string) => [
     QK.financialAccounts(profileId),
     QK.cashOverview(profileId),
+    QK.financialTransfers(profileId, 20),
     QK.financialOverview(profileId, new Date().getFullYear(), new Date().getMonth() + 1),
   ] as const,
   onGoalChanged: (profileId: string) => [

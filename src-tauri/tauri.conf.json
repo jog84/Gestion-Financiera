@@ -19,7 +19,7 @@
         "minHeight": 600,
         "center": true,
         "decorations": true,
-        "visible": false
+        "backgroundColor": "#020617"
       }
     ],
     "security": {
@@ -38,7 +38,8 @@
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
       }
     }
   }

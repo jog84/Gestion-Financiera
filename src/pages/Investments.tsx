@@ -663,6 +663,22 @@ export function Investments() {
               currentCcl={currentCcl}
               dispInv={dispInv}
               dispAct={dispAct}
+              onRegister={(ticker, price) => {
+                setInstrType(ticker.length <= 6 ? "cedear" : "otro");
+                setTransactionKind("buy");
+                setForm((prev) => ({
+                  ...prev,
+                  ticker,
+                  name: ticker,
+                  price_ars: String(price),
+                  transaction_date: new Date().toISOString().slice(0, 10),
+                  current_price_ars: String(price),
+                  dolar_ccl: currentCcl ? String(currentCcl) : prev.dolar_ccl,
+                  notes: "",
+                  quantity: "",
+                }));
+                setModalOpen(true);
+              }}
             />
           ) : (
             <TransactionsTable

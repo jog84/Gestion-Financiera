@@ -468,3 +468,55 @@ export interface InversionesSignal {
 
 export const fetchInversionesSignals = () =>
   invoke<InversionesSignal[]>("fetch_inversiones_signals");
+
+export interface TickerTechnicals {
+  rsi14: number | null;
+  macd: number | null;
+  macd_signal: number | null;
+  macd_histogram: number | null;
+  bb_upper: number | null;
+  bb_middle: number | null;
+  bb_lower: number | null;
+  ema20: number | null;
+  ema50: number | null;
+  ema200: number | null;
+  atr14: number | null;
+  adx14: number | null;
+  plus_di: number | null;
+  minus_di: number | null;
+  support_level: number | null;
+  resistance_level: number | null;
+  rsi_divergence: string | null;
+  timestamp: string;
+}
+
+export interface PriceBar {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface TickerAnalysis {
+  ticker: string;
+  instrument_name: string;
+  asset_class: string;
+  current_price: number | null;
+  signal: InversionesSignal | null;
+  technicals: TickerTechnicals | null;
+  price_history: PriceBar[];
+  macro_snapshot: {
+    embi?: number | null;
+    embiTrend?: string | null;
+    inflacionMensual?: number | null;
+    brechaCambiaria?: number | null;
+    macroScore?: number;
+    bondScore?: number;
+    equityScore?: number;
+  } | null;
+}
+
+export const fetchTickerAnalysis = (ticker: string) =>
+  invoke<TickerAnalysis>("fetch_ticker_analysis", { ticker });

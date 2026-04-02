@@ -1,5 +1,5 @@
-import { Fragment } from "react";
-import { ChevronRight } from "lucide-react";
+import { Fragment, useState } from "react";
+import { ChevronRight, LineChart } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { calcRow } from "@/lib/investmentCalcs";
 import {
@@ -17,6 +17,7 @@ import {
   type SortKey,
 } from "@/components/investments/investmentHelpers";
 import { Card } from "@/components/ui/Card";
+import { TickerAnalysisModal } from "@/components/investments/TickerAnalysisModal";
 
 type PositionsTableProps = {
   positions: EnhancedPosition[];
@@ -33,6 +34,7 @@ type PositionsTableProps = {
   currentCcl: number | null;
   dispInv: number;
   dispAct: number;
+  onRegister?: (ticker: string, price: number) => void;
 };
 
 export function PositionsTable({
@@ -50,10 +52,13 @@ export function PositionsTable({
   currentCcl,
   dispInv,
   dispAct,
+  onRegister,
 }: PositionsTableProps) {
   const isGainPos = dispAct - dispInv >= 0;
+  const [analysisTicker, setAnalysisTicker] = useState<string | null>(null);
 
   return (
+    <>
     <Card className="animate-fade-in-up delay-100" style={{ padding: 0, overflow: "hidden" }}>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -64,12 +69,14 @@ export function PositionsTable({
               <th style={INVESTMENTS_TH}>Sector</th>
               <th style={{ ...INVESTMENTS_TH, textAlign: "right" }}>PPP</th>
               <th style={{ ...INVESTMENTS_TH, textAlign: "right" }}>Precio Act.</th>
+              <th style={{ ...INVESTMENTS_TH, textAlign: "right" }}>Realizado</th>
               <SortTH label={`Invertido ${currency}`} col="invertido" sortCol={sortCol} sortDir={sortDir} onSort={onSort} right />
               <SortTH label={`Valor Act. ${currency}`} col="actual" sortCol={sortCol} sortDir={sortDir} onSort={onSort} right />
               <SortTH label={`Gan. ${currency}`} col="ganancia" sortCol={sortCol} sortDir={sortDir} onSort={onSort} right />
               <SortTH label="% Ret." col="pct" sortCol={sortCol} sortDir={sortDir} onSort={onSort} right />
               <SortTH label="Peso" col="peso" sortCol={sortCol} sortDir={sortDir} onSort={onSort} right />
               <th style={INVESTMENTS_TH}>Señales</th>
+              <th style={INVESTMENTS_TH}></th>
             </tr>
           </thead>
           <tbody>
@@ -139,6 +146,9 @@ export function PositionsTable({
                         </span>
                       ) : <span style={{ color: "var(--text-3)" }}>—</span>}
                     </td>
+                    <td style={{ ...INVESTMENTS_TD, textAlign: "right", color: pos.realizedGainArs >= 0 ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
+                      {sym}{fNum(isArs ? pos.realizedGainArs : pos.realizedGainUsd)}
+                    </td>
                     <td style={{ ...INVESTMENTS_TD, textAlign: "right" }}>{sym}{fNum(invertido)}</td>
                     <td style={{ ...INVESTMENTS_TD, textAlign: "right", fontWeight: 600 }}>{sym}{fNum(actual)}</td>
                     <td style={{ ...INVESTMENTS_TD, textAlign: "right", color: isPos ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
@@ -158,10 +168,29 @@ export function PositionsTable({
                     <td style={{ ...INVESTMENTS_TD, fontFamily: "var(--font-ui)" }}>
                       <SignalBadges signals={pos.signals} />
                     </td>
+                    <td style={{ ...INVESTMENTS_TD }}>
+                      {pos.ticker && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setAnalysisTicker(pos.ticker); }}
+                          title="Ver análisis"
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: "3px",
+                            padding: "3px 8px", borderRadius: "5px",
+                            border: "1px solid var(--border-light)",
+                            background: "var(--surface-2)",
+                            color: "var(--primary)",
+                            fontSize: "10px", fontWeight: 600, cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          <LineChart size={10} /> Análisis
+                        </button>
+                      )}
+                    </td>
                   </tr>
                   {isExpanded && (
                     <tr>
-                      <td colSpan={11} style={{ padding: 0, borderBottom: !isLast ? "1px solid var(--border)" : "none" }}>
+                      <td colSpan={12} style={{ padding: 0, borderBottom: !isLast ? "1px solid var(--border)" : "none" }}>
                         <div style={{ background: "var(--surface-3, var(--surface-2))", borderLeft: `3px solid ${INSTRUMENT_COLORS_HEX[pos.type]}`, padding: "12px 24px 16px 36px" }}>
                           <div style={{ fontSize: "10px", fontWeight: 700, color: "var(--text-3)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "10px" }}>
                             Detalle de operaciones — {pos.key}
@@ -169,7 +198,7 @@ export function PositionsTable({
                           <table style={{ width: "100%", borderCollapse: "collapse" }}>
                             <thead>
                               <tr>
-                                {["Fecha", "Detalles", "Precio compra", "Precio actual", "Invertido", "Valor act.", "Ganancia", "% Gan."].map((header, index) => (
+                                {["Fecha", "Oper.", "Detalles", "Precio compra", "Precio actual", "Invertido", "Valor act.", "Ganancia", "% Gan."].map((header, index) => (
                                   <th key={header} style={{ ...INVESTMENTS_TH, padding: "4px 10px", background: "transparent", textAlign: index >= 2 ? "right" : "left" }}>{header}</th>
                                 ))}
                               </tr>
@@ -188,6 +217,7 @@ export function PositionsTable({
                                 return (
                                   <tr key={inv.id} style={{ borderTop: entryIndex > 0 ? "1px solid var(--border-light)" : "none" }}>
                                     <td style={{ ...INVESTMENTS_TD, padding: "6px 10px", color: "var(--text-3)", fontSize: "11px" }}>{formatDate(inv.transaction_date)}</td>
+                                    <td style={{ ...INVESTMENTS_TD, padding: "6px 10px", fontSize: "11px", fontFamily: "var(--font-ui)" }}>{inv.transaction_kind === "sell" ? "Venta" : "Compra"}</td>
                                     <td style={{ ...INVESTMENTS_TD, padding: "6px 10px", color: "var(--text-3)", fontSize: "11px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{c.detalles || "—"}</td>
                                     <td style={{ ...INVESTMENTS_TD, padding: "6px 10px", textAlign: "right", fontSize: "11px" }}>
                                       {entryPrice > 0 ? (
@@ -219,7 +249,7 @@ export function PositionsTable({
                             {pos.count > 1 && pos.ppp !== null && (
                               <tfoot>
                                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                                  <td colSpan={2} style={{ ...INVESTMENTS_TD, padding: "6px 10px", fontSize: "11px", color: "var(--text-3)" }}>PPP consolidado</td>
+                                  <td colSpan={3} style={{ ...INVESTMENTS_TD, padding: "6px 10px", fontSize: "11px", color: "var(--text-3)" }}>PPP consolidado</td>
                                   <td colSpan={6} style={{ ...INVESTMENTS_TD, padding: "6px 10px", fontSize: "11px" }}>
                                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-2)", fontWeight: 700 }}>${fNum(pos.ppp)}</span>
                                     <span style={{ color: "var(--text-3)", marginLeft: 8 }}>· {fNum(pos.totalQty, pos.totalQty % 1 === 0 ? 0 : 2)} unidades</span>
@@ -242,8 +272,11 @@ export function PositionsTable({
             })}
             <tr style={{ borderTop: "2px solid var(--border)", background: "var(--surface-2)" }}>
               <td style={{ ...INVESTMENTS_TD, fontFamily: "var(--font-ui)", fontWeight: 700, color: "var(--text)" }} colSpan={2}>TOTAL</td>
-              <td colSpan={3} style={{ ...INVESTMENTS_TD, color: "var(--text-3)", fontSize: "11px" }}>
+              <td colSpan={4} style={{ ...INVESTMENTS_TD, color: "var(--text-3)", fontSize: "11px" }}>
                 {positions.length} posición{positions.length !== 1 ? "es" : ""} · {investmentsCount} transacción{investmentsCount !== 1 ? "es" : ""}
+              </td>
+              <td style={{ ...INVESTMENTS_TD, textAlign: "right", fontWeight: 700, color: "var(--text-2)" }}>
+                {sym}{fNum(positions.reduce((sum, position) => sum + (currency === "ARS" ? position.realizedGainArs : position.realizedGainUsd), 0))}
               </td>
               <td style={{ ...INVESTMENTS_TD, textAlign: "right", fontWeight: 700 }}>{sym}{fNum(dispInv)}</td>
               <td style={{ ...INVESTMENTS_TD, textAlign: "right", fontWeight: 700 }}>{sym}{fNum(dispAct)}</td>
@@ -264,5 +297,14 @@ export function PositionsTable({
         )}
       </div>
     </Card>
+
+    {analysisTicker && (
+      <TickerAnalysisModal
+        ticker={analysisTicker}
+        onClose={() => setAnalysisTicker(null)}
+        onRegister={onRegister ? (ticker, price) => { setAnalysisTicker(null); onRegister(ticker, price); } : undefined}
+      />
+    )}
+    </>
   );
 }

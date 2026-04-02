@@ -52,7 +52,7 @@ import { exportInvestmentsTemplate, importInvestments } from "@/lib/excel";
 import { INVALIDATE, QK } from "@/lib/queryKeys";
 import type { InstrumentType, InvestmentEntry } from "@/types";
 
-type InvestmentsTab = "resumen" | "transacciones";
+type InvestmentsTab = "resumen" | "transacciones" | "analisis";
 
 export function Investments() {
   const { profileId } = useProfile();
@@ -615,10 +615,6 @@ export function Investments() {
             <InsightsPanel insights={insights.filter((insight) => insight.level !== "info" || insight.action)} />
           </div>
 
-          <AddInstrumentWidget onAnalyze={setAnalysisTicker} />
-
-          <SignalsWidget onRegister={handleRegisterSignal} />
-
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
             <div style={{ display: "flex", gap: "4px", background: "var(--surface-2)", padding: "4px", borderRadius: "8px" }}>
               <button style={investmentsTabStyle(activeTab === "resumen")} onClick={() => setActiveTab("resumen")}>
@@ -629,6 +625,11 @@ export function Investments() {
               <button style={investmentsTabStyle(activeTab === "transacciones")} onClick={() => setActiveTab("transacciones")}>
                 Transacciones
               </button>
+              <button style={investmentsTabStyle(activeTab === "analisis")} onClick={() => setActiveTab("analisis")}>
+                <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                  📊 Análisis
+                </span>
+              </button>
             </div>
             <input
               type="text"
@@ -636,6 +637,7 @@ export function Investments() {
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               style={{
+                display: activeTab === "analisis" ? "none" : undefined,
                 height: "32px",
                 width: "220px",
                 borderRadius: "var(--radius-sm)",
@@ -652,7 +654,12 @@ export function Investments() {
             />
           </div>
 
-          {activeTab === "resumen" ? (
+          {activeTab === "analisis" ? (
+            <div>
+              <AddInstrumentWidget onAnalyze={setAnalysisTicker} />
+              <SignalsWidget onRegister={handleRegisterSignal} />
+            </div>
+          ) : activeTab === "resumen" ? (
             <PositionsTable
               positions={filteredPositions}
               investmentsCount={investments.length}

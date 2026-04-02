@@ -18,4 +18,5 @@ pub mod recurring;
 pub mod reports;
 pub mod settings;
 pub mod sources;
+pub mod signals;
 pub mod themes;

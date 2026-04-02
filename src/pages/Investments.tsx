@@ -4,13 +4,14 @@ import { BarChart2, Briefcase, Download, DollarSign, Plus, RefreshCw, Target, Up
 import { toast } from "sonner";
 import { useProfile } from "@/app/providers/ProfileProvider";
 import { AllocationCharts } from "@/components/investments/AllocationCharts";
-import { generateSmartInsights, calcCAGR, calcRow, calcXIRR, getSector, type CashFlow } from "@/lib/investmentCalcs";
+import { generateSmartInsights, calcCAGR, calcRow, calcXIRR, type CashFlow } from "@/lib/investmentCalcs";
 import { InsightsPanel } from "@/components/investments/InsightsPanel";
 import { InvestmentFormModal } from "@/components/investments/InvestmentFormModal";
 import { PortfolioChart } from "@/components/investments/PortfolioChart";
 import { PortfolioKPIBar } from "@/components/investments/PortfolioKPIBar";
 import { PositionsTable } from "@/components/investments/PositionsTable";
 import { RebalanceModal } from "@/components/investments/RebalanceModal";
+import { SignalsWidget } from "@/components/investments/SignalsWidget";
 import { TransactionsTable } from "@/components/investments/TransactionsTable";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -36,14 +37,17 @@ import {
   fetchCcl,
   fetchPrices,
   getDashboardSummary,
+  getCashOverview,
+  getFinancialAccounts,
   getInvestments,
   getPortfolioSnapshots,
   savePortfolioSnapshot,
   updateInvestmentValue,
   updatePricesByTicker,
+  type InversionesSignal,
 } from "@/lib/api";
 import { exportInvestmentsTemplate, importInvestments } from "@/lib/excel";
-import { QK } from "@/lib/queryKeys";
+import { INVALIDATE, QK } from "@/lib/queryKeys";
 import type { InstrumentType, InvestmentEntry } from "@/types";
 
 type InvestmentsTab = "resumen" | "transacciones";
@@ -73,10 +77,21 @@ export function Investments() {
   const [form, setForm] = useState<InvestmentFormState>(createEmptyInvestmentForm);
   const [refreshing, setRefreshing] = useState(false);
   const [editingPrice, setEditingPrice] = useState<{ id: string; value: string } | null>(null);
+  const [transactionKind, setTransactionKind] = useState<"buy" | "sell">("buy");
 
   const { data: investments = [], isLoading } = useQuery({
     queryKey: QK.investments(profileId),
     queryFn: () => getInvestments(profileId),
+  });
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: QK.financialAccounts(profileId),
+    queryFn: () => getFinancialAccounts(profileId),
+  });
+
+  const { data: cashOverview } = useQuery({
+    queryKey: QK.cashOverview(profileId),
+    queryFn: () => getCashOverview(profileId),
   });
 
   const { data: snapshots = [] } = useQuery({
@@ -108,38 +123,60 @@ export function Investments() {
     }
   };
 
-  const totals = useMemo(() => investments.reduce((acc, investment) => {
-    const row = calcRow(investment, currentCcl);
-    return {
-      invertidoArs: acc.invertidoArs + row.invertidoArs,
-      actualArs: acc.actualArs + row.actualArs,
-      invertidoUsd: acc.invertidoUsd + row.invertidoUsd,
-      actualUsd: acc.actualUsd + row.actualUsd,
+  const handleRegisterSignal = (signal: InversionesSignal) => {
+    const assetClassToInstrType = (ac: string): typeof instrType => {
+      if (ac === "CEDEAR") return "cedear";
+      if (ac === "ACCION") return "accion";
+      if (ac.startsWith("BONO")) return "bono";
+      return "otro";
     };
-  }, { invertidoArs: 0, actualArs: 0, invertidoUsd: 0, actualUsd: 0 }), [investments, currentCcl]);
-
-  const sectorTotals = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const investment of investments) {
-      const sector = getSector(investment.ticker, investment.instrument_type);
-      const row = calcRow(investment, currentCcl);
-      map[sector] = (map[sector] ?? 0) + row.actualArs;
-    }
-    return map;
-  }, [investments, currentCcl]);
+    setInstrType(assetClassToInstrType(signal.asset_class));
+    setTransactionKind("buy");
+    setForm((prev) => ({
+      ...prev,
+      ticker: signal.ticker,
+      name: signal.instrument_name,
+      price_ars: String(signal.entry_price),
+      transaction_date: new Date().toISOString().slice(0, 10),
+      notes: `Señal ${signal.signal_type} desde Inversiones AR · Stop: $${signal.stop_loss.toLocaleString("es-AR")} · TP1: $${signal.take_profit1.toLocaleString("es-AR")} · Confianza: ${signal.confidence_score.toFixed(0)}%`,
+      quantity: "",
+      current_price_ars: String(signal.entry_price),
+      dolar_ccl: currentCcl ? String(currentCcl) : prev.dolar_ccl,
+    }));
+    setModalOpen(true);
+  };
 
   const positions = useMemo(
-    () => buildPositions(investments, totals.actualArs, sectorTotals, currentCcl),
-    [investments, totals.actualArs, sectorTotals, currentCcl],
+    () => buildPositions(investments, currentCcl),
+    [investments, currentCcl],
   );
+
+  const totals = useMemo(() => positions.reduce((acc, position) => ({
+    invertidoArs: acc.invertidoArs + position.invertidoArs,
+    actualArs: acc.actualArs + position.actualArs,
+    invertidoUsd: acc.invertidoUsd + position.invertidoUsd,
+    actualUsd: acc.actualUsd + position.actualUsd,
+  }), { invertidoArs: 0, actualArs: 0, invertidoUsd: 0, actualUsd: 0 }), [positions]);
+
+  const realizedGains = useMemo(() => investments.reduce((acc, investment) => {
+    if (investment.transaction_kind !== "sell") return acc;
+    const row = calcRow(investment, currentCcl);
+    return {
+      ars: acc.ars + row.gananciaArs,
+      usd: acc.usd + row.gananciaUsd,
+    };
+  }, { ars: 0, usd: 0 }), [investments, currentCcl]);
 
   const { cagr, xirr } = useMemo(() => {
     if (investments.length === 0) return { cagr: 0, xirr: null };
 
-    const sorted = [...investments].sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime());
+    const sorted = [...investments].filter((investment) => investment.transaction_kind === "buy").sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime());
     const cashFlows: CashFlow[] = investments.map((investment) => {
       const row = calcRow(investment, currentCcl);
-      return { date: new Date(investment.transaction_date), amount: -row.invertidoArs };
+      return {
+        date: new Date(investment.transaction_date),
+        amount: investment.transaction_kind === "sell" ? row.actualArs : -row.invertidoArs,
+      };
     });
     cashFlows.push({ date: new Date(), amount: totals.actualArs });
     cashFlows.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -184,7 +221,9 @@ export function Investments() {
     for (const [date, group] of groups) {
       for (const investment of group) {
         const row = calcRow(investment, currentCcl);
-        cumulative += isArs ? row.invertidoArs : row.invertidoUsd;
+        cumulative += investment.transaction_kind === "sell"
+          ? -(isArs ? row.actualArs : row.actualUsd)
+          : (isArs ? row.invertidoArs : row.invertidoUsd);
       }
       points.push({ date, invested: cumulative, portfolio: cumulative });
     }
@@ -259,6 +298,8 @@ export function Investments() {
         profile_id: profileId,
         name: form.name || form.ticker,
         ticker: form.ticker || undefined,
+        transaction_kind: transactionKind,
+        account_id: form.account_id || null,
         amount_invested: amountInvested,
         current_value: currentValue || undefined,
         transaction_date: form.transaction_date,
@@ -274,11 +315,12 @@ export function Investments() {
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
+      INVALIDATE.onInvestmentChanged(profileId).forEach((key) => qc.invalidateQueries({ queryKey: key }));
       setModalOpen(false);
       setForm(createEmptyInvestmentForm());
       setTickerDetection(null);
-      toast.success("Inversión registrada");
+      setTransactionKind("buy");
+      toast.success(transactionKind === "sell" ? "Venta registrada" : "Inversión registrada");
     },
     onError: (error: unknown) => toast.error(String(error)),
   });
@@ -286,9 +328,9 @@ export function Investments() {
   const deleteMutation = useMutation({
     mutationFn: deleteInvestment,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
+      INVALIDATE.onInvestmentChanged(profileId).forEach((key) => qc.invalidateQueries({ queryKey: key }));
       setDeleteId(null);
-      toast.success("Inversión eliminada");
+      toast.success("Movimiento eliminado");
     },
   });
 
@@ -306,7 +348,7 @@ export function Investments() {
 
     try {
       await updateInvestmentValue(investment.id, newCurrentValue, newPrice);
-      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
+      INVALIDATE.onInvestmentChanged(profileId).forEach((key) => qc.invalidateQueries({ queryKey: key }));
       toast.success("Precio actualizado");
     } catch (error) {
       toast.error(String(error));
@@ -346,9 +388,10 @@ export function Investments() {
 
       try {
         const snapshotCcl = ccl ?? currentCcl ?? 0;
-        const recalcArs = investments.reduce((sum, investment) => sum + calcRow(investment, snapshotCcl).actualArs, 0);
-        const recalcUsd = investments.reduce((sum, investment) => sum + calcRow(investment, snapshotCcl).actualUsd, 0);
-        const recalcInvArs = investments.reduce((sum, investment) => sum + calcRow(investment, snapshotCcl).invertidoArs, 0);
+        const recomputedPositions = buildPositions(investments, snapshotCcl);
+        const recalcArs = recomputedPositions.reduce((sum, position) => sum + position.actualArs, 0);
+        const recalcUsd = recomputedPositions.reduce((sum, position) => sum + position.actualUsd, 0);
+        const recalcInvArs = recomputedPositions.reduce((sum, position) => sum + position.invertidoArs, 0);
         await savePortfolioSnapshot(profileId, recalcArs, recalcUsd, recalcInvArs, snapshotCcl);
         qc.invalidateQueries({ queryKey: QK.portfolioSnapshots(profileId) });
       } catch {
@@ -389,7 +432,7 @@ export function Investments() {
         });
       }
 
-      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
+      INVALIDATE.onInvestmentChanged(profileId).forEach((key) => qc.invalidateQueries({ queryKey: key }));
       toast.success(`${rows.length} inversión(es) importada(s)`);
     } catch {
       toast.error("Error al importar. Verificá el formato.");
@@ -399,13 +442,19 @@ export function Investments() {
   };
 
   const canSave = () => {
-    if (instrType === "plazo_fijo") return !!form.name && !!form.price_ars && !!form.tna && !!form.plazo_dias;
+    if (transactionKind === "sell" && !form.account_id) return false;
+    if (instrType === "plazo_fijo") return transactionKind === "buy" && !!form.name && !!form.price_ars && !!form.tna && !!form.plazo_dias;
     if (instrType === "fci") return !!form.name && !!form.quantity && !!form.price_ars;
     if (instrType === "bono") return !!form.ticker && !!form.quantity && !!form.price_ars;
     if (instrType === "crypto") return !!form.ticker && !!form.quantity && !!form.price_ars;
     if (instrType === "otro") return !!form.name && !!form.price_ars;
     return !!form.ticker && !!form.quantity && !!form.price_ars && !!form.dolar_ccl;
   };
+
+  const accountOptions = accounts.map((account) => ({
+    value: account.id,
+    label: `${account.name}${account.institution ? ` · ${account.institution}` : ""} · ${account.currency_code}`,
+  }));
 
   return (
     <div style={{ padding: "28px 32px", maxWidth: "1560px" }}>
@@ -470,7 +519,10 @@ export function Investments() {
               <Upload size={11} /> Importar
             </Button>
             <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
-            <Button size="xs" onClick={() => { setModalOpen(true); setForm(createEmptyInvestmentForm()); setTickerDetection(null); }}>
+            <Button variant="outline" size="xs" onClick={() => { setTransactionKind("sell"); setModalOpen(true); setForm(createEmptyInvestmentForm()); setTickerDetection(null); }}>
+              <Plus size={12} /> Registrar venta
+            </Button>
+            <Button size="xs" onClick={() => { setTransactionKind("buy"); setModalOpen(true); setForm(createEmptyInvestmentForm()); setTickerDetection(null); }}>
               <Plus size={12} /> Nueva inversión
             </Button>
           </>
@@ -528,6 +580,8 @@ export function Investments() {
               currency={currency}
               sym={sym}
               returnPctUsd={portfolioReturnPctUsd}
+              realizedGain={currency === "ARS" ? realizedGains.ars : realizedGains.usd}
+              liquidCash={currency === "ARS" ? (cashOverview?.liquid_balance ?? 0) : undefined}
             />
           </div>
 
@@ -557,6 +611,8 @@ export function Investments() {
           <div className="animate-fade-in-up">
             <InsightsPanel insights={insights.filter((insight) => insight.level !== "info" || insight.action)} />
           </div>
+
+          <SignalsWidget onRegister={handleRegisterSignal} />
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
             <div style={{ display: "flex", gap: "4px", background: "var(--surface-2)", padding: "4px", borderRadius: "8px" }}>
@@ -631,10 +687,13 @@ export function Investments() {
         onClose={() => setModalOpen(false)}
         form={form}
         setForm={setForm}
+        transactionKind={transactionKind}
+        setTransactionKind={setTransactionKind}
         instrType={instrType}
         setInstrType={setInstrType}
         tickerDetection={tickerDetection}
         setTickerDetection={setTickerDetection}
+        accountOptions={accountOptions}
         canSave={canSave}
         isPending={addMutation.isPending}
         onSubmit={() => addMutation.mutate()}

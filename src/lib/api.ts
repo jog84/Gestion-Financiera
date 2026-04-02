@@ -151,6 +151,8 @@ export const createInvestment = (payload: {
   profile_id: string;
   name: string;
   ticker?: string;
+  transaction_kind?: "buy" | "sell";
+  account_id?: string | null;
   amount_invested: number;
   current_value?: number;
   transaction_date: string;
@@ -435,3 +437,34 @@ export const getDbLocation = () => invoke<string>("get_db_location");
 export const setDbLocation = (path: string) => invoke<void>("set_db_location", { path });
 export const resetDbLocation = () => invoke<void>("reset_db_location");
 export const copyDbToLocation = (path: string) => invoke<void>("copy_db_to_location", { path });
+
+// ── Inversiones AR integration ────────────────────────────────────────────────
+
+export interface InversionesSignal {
+  id: string;
+  ticker: string;
+  instrument_name: string;
+  asset_class: string;
+  signal_type: "COMPRA" | "VENTA" | "NEUTRAL";
+  entry_price: number;
+  entry_price_usd: number | null;
+  stop_loss: number;
+  stop_loss_percent: number;
+  take_profit1: number;
+  take_profit1_percent: number;
+  take_profit2: number;
+  take_profit2_percent: number;
+  strength: number;
+  confidence_score: number;
+  reasoning: string[];
+  max_position_size_pct: number;
+  risk_reward_ratio: number;
+  generated_at: string;
+  expires_at: string;
+  is_stale: boolean;
+  execution_ready: boolean;
+  data_quality: string;
+}
+
+export const fetchInversionesSignals = () =>
+  invoke<InversionesSignal[]>("fetch_inversiones_signals");

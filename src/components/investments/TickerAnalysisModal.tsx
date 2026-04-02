@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   X, TrendingUp, TrendingDown, Activity, Globe,
-  AlertCircle, ArrowUpRight, ArrowDownRight, BarChart2
+  AlertCircle, ArrowUpRight, ArrowDownRight, BarChart2, LineChart
 } from "lucide-react";
 import { fetchTickerAnalysis, type TickerAnalysis } from "@/lib/api";
+import { PriceChart } from "./PriceChart";
 
 interface Props {
   ticker: string;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function TickerAnalysisModal({ ticker, onClose, onRegister }: Props) {
+  const [showChart, setShowChart] = useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: ["ticker-analysis", ticker],
     queryFn: () => fetchTickerAnalysis(ticker),
@@ -69,6 +71,18 @@ export function TickerAnalysisModal({ ticker, onClose, onRegister }: Props) {
               </span>
             )}
           </div>
+          <button
+            onClick={() => setShowChart(true)}
+            title="Ver gráfico TradingView"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: "5px",
+              padding: "4px 10px", borderRadius: "7px", fontSize: "12px", fontWeight: 600,
+              background: "rgba(34,211,238,0.1)", border: "1px solid rgba(34,211,238,0.3)",
+              color: "#22d3ee", cursor: "pointer",
+            }}
+          >
+            <LineChart size={13} /> Gráfico
+          </button>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "4px" }}>
             <X size={18} />
           </button>
@@ -112,6 +126,13 @@ export function TickerAnalysisModal({ ticker, onClose, onRegister }: Props) {
           {data && <AnalysisBody data={data} onRegister={onRegister} />}
         </div>
       </div>
+      {showChart && (
+        <PriceChart
+          ticker={ticker}
+          assetClass={data?.asset_class}
+          onClose={() => setShowChart(false)}
+        />
+      )}
     </div>
   );
 }

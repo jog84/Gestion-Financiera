@@ -168,6 +168,28 @@ export function InvestmentFormModal({
       );
     }
 
+    const ratio = p(form.cedear_ratio) || 1;
+    const ccl = p(form.dolar_ccl);
+    const precioUsd = p(form.precio_usd);
+    // Auto-calc ARS price from USD + ratio when user fills precio_usd
+    const calcPriceArs = precioUsd > 0 && ccl > 0 ? (precioUsd * ccl) / ratio : null;
+
+    const handlePrecioUsdChange = (val: string) => {
+      const usd = p(val);
+      const newPriceArs = usd > 0 && ccl > 0 ? String(Math.round((usd * ccl) / ratio)) : "";
+      setForm((f) => ({ ...f, precio_usd: val, price_ars: newPriceArs }));
+    };
+    const handleRatioChange = (val: string) => {
+      const r = p(val) || 1;
+      const newPriceArs = precioUsd > 0 && ccl > 0 ? String(Math.round((precioUsd * ccl) / r)) : form.price_ars;
+      setForm((f) => ({ ...f, cedear_ratio: val, price_ars: newPriceArs }));
+    };
+    const handleCclChange = (val: string) => {
+      const newCcl = p(val);
+      const newPriceArs = precioUsd > 0 && newCcl > 0 ? String(Math.round((precioUsd * newCcl) / ratio)) : form.price_ars;
+      setForm((f) => ({ ...f, dolar_ccl: val, price_ars: precioUsd > 0 ? newPriceArs : f.price_ars }));
+    };
+
     return (
       <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -175,18 +197,45 @@ export function InvestmentFormModal({
           <Input label="Nombre (opcional)" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
         </div>
         {renderDetectionChip({ tickerDetection, formTicker: form.ticker, instrType })}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+
+        {/* Sección ratio CEDEAR */}
+        <div style={{ background: "color-mix(in srgb, var(--primary) 6%, var(--surface-2))", border: "1px solid color-mix(in srgb, var(--primary) 20%, var(--border))", borderRadius: "8px", padding: "10px 12px" }}>
+          <div style={{ fontSize: "11px", color: "var(--primary)", fontWeight: 600, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            Precio CEDEAR = (Precio USD × CCL) ÷ Ratio
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+            <Input label="Precio USD subyacente" type="text" inputMode="decimal" placeholder="Ej: 155.40" value={form.precio_usd} onChange={(e) => handlePrecioUsdChange(e.target.value)} />
+            <Input label="Ratio CEDEAR" type="text" inputMode="decimal" placeholder="Ej: 10" value={form.cedear_ratio} onChange={(e) => handleRatioChange(e.target.value)} />
+            <Input label="Dólar CCL *" type="text" inputMode="decimal" value={form.dolar_ccl} onChange={(e) => handleCclChange(e.target.value)} />
+          </div>
+          {calcPriceArs !== null && (
+            <div style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-3)" }}>
+              → Precio CEDEAR ARS calculado: <strong style={{ color: "var(--success, #4ade80)", fontFamily: "var(--font-mono)" }}>${fNum(calcPriceArs, 2)}</strong>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <Input label="Cantidad *" type="text" inputMode="numeric" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} />
-          <Input label="Precio ARS *" type="text" inputMode="decimal" value={form.price_ars} onChange={(e) => setForm((f) => ({ ...f, price_ars: e.target.value }))} />
-          <Input label="Dólar CCL *" type="text" inputMode="decimal" value={form.dolar_ccl} onChange={(e) => setForm((f) => ({ ...f, dolar_ccl: e.target.value }))} />
+          <Input
+            label={calcPriceArs !== null ? "Precio CEDEAR ARS * (auto)" : "Precio CEDEAR ARS *"}
+            type="text" inputMode="decimal"
+            value={form.price_ars}
+            onChange={(e) => setForm((f) => ({ ...f, price_ars: e.target.value }))}
+          />
         </div>
         <Input label="Precio actual ARS" type="text" inputMode="decimal" value={form.current_price_ars} onChange={(e) => setForm((f) => ({ ...f, current_price_ars: e.target.value }))} />
         {form.price_ars && form.dolar_ccl && form.quantity && (
           <div style={{ background: "var(--surface-2)", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "var(--text-3)" }}>
-            Total:{" "}
+            Total invertido:{" "}
             <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>
-              USD {fNum((p(form.price_ars) * p(form.quantity)) / p(form.dolar_ccl))}
+              ${fNum(p(form.price_ars) * p(form.quantity))} ARS
             </strong>
+            {ccl > 0 && (
+              <span style={{ marginLeft: "12px" }}>
+                · <strong style={{ fontFamily: "var(--font-mono)" }}>USD {fNum((p(form.price_ars) * p(form.quantity)) / ccl)}</strong>
+              </span>
+            )}
           </div>
         )}
       </>

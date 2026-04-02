@@ -33,6 +33,9 @@ export type InvestmentFormState = {
   tna: string;
   plazo_dias: string;
   fecha_vencimiento: string;
+  // CEDEAR ratio support
+  precio_usd: string;
+  cedear_ratio: string;
 };
 
 export interface EnhancedPosition {
@@ -125,6 +128,8 @@ export const createEmptyInvestmentForm = (): InvestmentFormState => ({
   tna: "",
   plazo_dias: "",
   fecha_vencimiento: "",
+  precio_usd: "",
+  cedear_ratio: "1",
 });
 
 export function fNum(n: number, d = 2) {

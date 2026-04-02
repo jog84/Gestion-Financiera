@@ -10,6 +10,8 @@ interface PortfolioKPIBarProps {
   /** Retorno porcentual en USD real (usa CCL actual para el valor presente).
    *  undefined = no disponible (sin CCL actual). */
   returnPctUsd?: number;
+  realizedGain?: number;
+  liquidCash?: number;
 }
 
 function fNum(n: number, d = 2) {
@@ -84,7 +86,7 @@ function KPICard({ label, value, subValue, subLabel, trend, alert, alertLabel, m
   );
 }
 
-export function PortfolioKPIBar({ portfolioValue, totalInvested, cagr, xirr, sym, returnPctUsd }: PortfolioKPIBarProps) {
+export function PortfolioKPIBar({ portfolioValue, totalInvested, cagr, xirr, sym, returnPctUsd, realizedGain = 0, liquidCash }: PortfolioKPIBarProps) {
   const ganancia = portfolioValue - totalInvested;
   const retTotal = totalInvested > 0 ? ganancia / totalInvested : 0;
   const isPos = ganancia >= 0;
@@ -131,6 +133,23 @@ export function PortfolioKPIBar({ portfolioValue, totalInvested, cagr, xirr, sym
           value="—"
           subLabel="datos insuficientes"
           trend="neutral"
+        />
+      )}
+
+      <KPICard
+        label="Ganancia realizada"
+        value={`${realizedGain >= 0 ? "+" : ""}${sym}${fNum(Math.abs(realizedGain), 0)}`}
+        subLabel="ventas cerradas"
+        trend={realizedGain > 0 ? "up" : realizedGain < 0 ? "down" : "neutral"}
+      />
+
+      {liquidCash !== undefined && (
+        <KPICard
+          label="Liquidez disponible"
+          value={`${sym}${fNum(liquidCash, 0)}`}
+          subLabel="cuentas líquidas"
+          trend="neutral"
+          mono={false}
         />
       )}
 

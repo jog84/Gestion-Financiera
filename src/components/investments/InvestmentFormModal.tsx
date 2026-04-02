@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { Select } from "@/components/ui/Select";
 import type { InstrumentType } from "@/types";
 import { detectInstrumentType } from "@/lib/investmentCalcs";
 import {
@@ -21,10 +22,13 @@ type InvestmentFormModalProps = {
   onClose: () => void;
   form: InvestmentFormState;
   setForm: Dispatch<SetStateAction<InvestmentFormState>>;
+  transactionKind: "buy" | "sell";
+  setTransactionKind: Dispatch<SetStateAction<"buy" | "sell">>;
   instrType: InstrumentType;
   setInstrType: Dispatch<SetStateAction<InstrumentType>>;
   tickerDetection: TickerDetection | null;
   setTickerDetection: Dispatch<SetStateAction<TickerDetection | null>>;
+  accountOptions: { value: string; label: string }[];
   canSave: () => boolean;
   isPending: boolean;
   onSubmit: () => void;
@@ -35,10 +39,13 @@ export function InvestmentFormModal({
   onClose,
   form,
   setForm,
+  transactionKind,
+  setTransactionKind,
   instrType,
   setInstrType,
   tickerDetection,
   setTickerDetection,
+  accountOptions,
   canSave,
   isPending,
   onSubmit,
@@ -187,8 +194,49 @@ export function InvestmentFormModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Nueva inversión">
+    <Modal open={open} onClose={onClose} title={transactionKind === "sell" ? "Registrar venta" : "Nueva inversión"}>
       <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+        <div>
+          <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-3)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "8px" }}>
+            Operación
+          </div>
+          <div style={{ display: "flex", gap: "6px" }}>
+            {[
+              { value: "buy", label: "Compra" },
+              { value: "sell", label: "Venta" },
+            ].map((option) => {
+              const disabled = option.value === "sell" && (instrType === "plazo_fijo" || instrType === "otro");
+              const active = transactionKind === option.value;
+              return (
+                <button
+                  key={option.value}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!disabled) {
+                      setTransactionKind(option.value as "buy" | "sell");
+                      setForm((current) => ({ ...current, account_id: "" }));
+                    }
+                  }}
+                  style={{
+                    padding: "5px 12px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    border: "1px solid",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    borderRadius: "6px",
+                    transition: "all 0.15s",
+                    opacity: disabled ? 0.45 : 1,
+                    borderColor: active ? "var(--primary)" : "var(--border)",
+                    background: active ? "var(--primary-dim)" : "transparent",
+                    color: active ? "var(--primary)" : "var(--text-3)",
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div>
           <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-3)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "8px" }}>
             Tipo de instrumento
@@ -216,6 +264,15 @@ export function InvestmentFormModal({
             ))}
           </div>
         </div>
+        {accountOptions.length > 0 && (
+          <Select
+            label={transactionKind === "sell" ? "Cuenta de liquidación *" : "Cuenta"}
+            options={accountOptions}
+            placeholder={transactionKind === "sell" ? "Seleccionar cuenta" : "Sin impacto en caja"}
+            value={form.account_id}
+            onChange={(e) => setForm((f) => ({ ...f, account_id: e.target.value }))}
+          />
+        )}
         {formFields()}
         <Input label="Notas" placeholder="Opcional" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
         {(instrType === "cedear" || instrType === "accion") && (
@@ -224,7 +281,7 @@ export function InvestmentFormModal({
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
           <Button onClick={onSubmit} disabled={!canSave() || isPending}>
-            {isPending ? "Guardando..." : "Guardar"}
+            {isPending ? "Guardando..." : transactionKind === "sell" ? "Registrar venta" : "Guardar"}
           </Button>
         </div>
       </div>

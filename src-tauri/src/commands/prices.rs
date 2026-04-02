@@ -152,7 +152,7 @@ pub async fn update_prices_by_ticker(
                        ELSE current_value
                      END,
                      updated_at = ?
-                 WHERE profile_id = ? AND (ticker = ? OR name = ?)",
+                 WHERE profile_id = ? AND transaction_kind = 'buy' AND (ticker = ? OR name = ?)",
             )
             .bind(u.price_ars)
             .bind(u.price_ars)
@@ -174,7 +174,7 @@ pub async fn update_prices_by_ticker(
                        ELSE current_value
                      END,
                      updated_at = ?
-                 WHERE profile_id = ? AND (ticker = ? OR name = ?)",
+                 WHERE profile_id = ? AND transaction_kind = 'buy' AND (ticker = ? OR name = ?)",
             )
             .bind(u.price_ars)
             .bind(u.price_ars)

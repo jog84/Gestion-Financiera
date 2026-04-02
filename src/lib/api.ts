@@ -520,3 +520,23 @@ export interface TickerAnalysis {
 
 export const fetchTickerAnalysis = (ticker: string) =>
   invoke<TickerAnalysis>("fetch_ticker_analysis", { ticker });
+
+export interface AddTickerResult {
+  ticker: string;
+  has_price: boolean;
+  bars_count: number;
+  has_technicals: boolean;
+  has_signal: boolean;
+}
+
+export interface InversionesInstrument {
+  ticker: string;
+  name: string;
+  asset_class: string;
+}
+
+export const addTickerToInversiones = (ticker: string, assetClass: string) =>
+  invoke<AddTickerResult>("add_ticker_to_inversiones", { ticker, assetClass });
+
+export const searchInversionesInstruments = (query: string) =>
+  invoke<InversionesInstrument[]>("search_inversiones_instruments", { query });

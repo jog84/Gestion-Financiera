@@ -51,12 +51,14 @@ export function TransactionsTable({
             <tr style={{ borderBottom: "1px solid var(--border)" }}>
               <SortTH label="Fecha" col="fecha" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
               <SortTH label="Tipo" col="tipo" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
+              <th style={INVESTMENTS_TH}>Operación</th>
               <SortTH label="Instrumento" col="nombre" sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
               <th style={INVESTMENTS_TH}>Detalles</th>
               <SortTH label={`Invertido ${currency}`} col="invertido" sortCol={sortCol} sortDir={sortDir} onSort={onSort} right />
               <SortTH label={`Valor Act. ${currency}`} col="actual" sortCol={sortCol} sortDir={sortDir} onSort={onSort} right />
               <SortTH label={`Gan. ${currency}`} col="ganancia" sortCol={sortCol} sortDir={sortDir} onSort={onSort} right />
               <SortTH label="% Gan." col="pct" sortCol={sortCol} sortDir={sortDir} onSort={onSort} right />
+              <th style={INVESTMENTS_TH}>Cuenta</th>
               <th style={{ ...INVESTMENTS_TH, width: "36px" }} />
             </tr>
           </thead>
@@ -80,6 +82,18 @@ export function TransactionsTable({
                 >
                   <td style={{ ...INVESTMENTS_TD, color: "var(--text-3)" }}>{formatDate(investment.transaction_date)}</td>
                   <td style={{ ...INVESTMENTS_TD, fontFamily: "var(--font-ui)" }}><TypeBadge type={type} /></td>
+                  <td style={{ ...INVESTMENTS_TD, fontFamily: "var(--font-ui)" }}>
+                    <span style={{
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      padding: "2px 7px",
+                      borderRadius: "999px",
+                      background: investment.transaction_kind === "sell" ? "var(--warning-dim)" : "rgba(67,97,238,0.12)",
+                      color: investment.transaction_kind === "sell" ? "var(--warning)" : "var(--primary)",
+                    }}>
+                      {investment.transaction_kind === "sell" ? "Venta" : "Compra"}
+                    </span>
+                  </td>
                   <td style={{ ...INVESTMENTS_TD, fontFamily: "var(--font-ui)", fontWeight: 600, color: "var(--text)" }}>
                     {investment.ticker ?? investment.name}
                     {investment.ticker && investment.name && investment.name !== investment.ticker && (
@@ -89,9 +103,9 @@ export function TransactionsTable({
                   <td style={{ ...INVESTMENTS_TD, color: "var(--text-3)", fontSize: "11px", maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis" }}>{c.detalles}</td>
                   <td style={{ ...INVESTMENTS_TD, textAlign: "right" }}>{sym}{fNum(invested)}</td>
                   <td
-                    style={{ ...INVESTMENTS_TD, textAlign: "right", cursor: type !== "plazo_fijo" ? "pointer" : "default" }}
-                    title={type !== "plazo_fijo" ? "Click para editar precio actual" : undefined}
-                    onClick={() => type !== "plazo_fijo" && setEditingPrice({ id: investment.id, value: investment.current_price_ars?.toString() ?? "" })}
+                    style={{ ...INVESTMENTS_TD, textAlign: "right", cursor: type !== "plazo_fijo" && investment.transaction_kind !== "sell" ? "pointer" : "default" }}
+                    title={type !== "plazo_fijo" && investment.transaction_kind !== "sell" ? "Click para editar precio actual" : undefined}
+                    onClick={() => type !== "plazo_fijo" && investment.transaction_kind !== "sell" && setEditingPrice({ id: investment.id, value: investment.current_price_ars?.toString() ?? "" })}
                   >
                     {editingPrice?.id === investment.id ? (
                       <input
@@ -109,7 +123,7 @@ export function TransactionsTable({
                         style={{ width: "90px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "12px", background: "var(--surface)", border: "1px solid var(--primary)", borderRadius: "4px", padding: "2px 6px", color: "var(--text)", outline: "none" }}
                       />
                     ) : (
-                      <span style={type !== "plazo_fijo" ? { borderBottom: "1px dashed var(--border)" } : {}}>
+                      <span style={type !== "plazo_fijo" && investment.transaction_kind !== "sell" ? { borderBottom: "1px dashed var(--border)" } : {}}>
                         {sym}{fNum(actual)}
                       </span>
                     )}
@@ -119,6 +133,9 @@ export function TransactionsTable({
                   </td>
                   <td style={{ ...INVESTMENTS_TD, textAlign: "right", color: isPos ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
                     {fPct(pct)}
+                  </td>
+                  <td style={{ ...INVESTMENTS_TD, fontFamily: "var(--font-ui)", color: "var(--text-3)" }}>
+                    {investment.account_name ?? "—"}
                   </td>
                   <td style={{ ...INVESTMENTS_TD, textAlign: "right" }}>
                     <button

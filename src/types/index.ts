@@ -90,8 +90,14 @@ export interface InvestmentEntry {
   period_id: string;
   name: string;
   ticker: string | null;
+  transaction_kind: "buy" | "sell";
+  account_id: string | null;
+  account_name: string | null;
   amount_invested: number;
   current_value: number | null;
+  cash_amount_ars: number | null;
+  realized_cost_ars: number | null;
+  realized_gain_ars: number | null;
   transaction_date: string;
   notes: string | null;
   quantity: number | null;

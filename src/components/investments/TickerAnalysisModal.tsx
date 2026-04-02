@@ -74,6 +74,28 @@ export function TickerAnalysisModal({ ticker, onClose, onRegister }: Props) {
           </button>
         </div>
 
+        {/* Timestamps */}
+        {data && (
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: "12px",
+            padding: "8px 20px", borderBottom: "1px solid var(--border-light)",
+            fontSize: "11px", color: "var(--text-muted)",
+          }}>
+            {data.price_history.length > 0 && (
+              <span>📊 Último precio: <strong style={{ color: "var(--text)" }}>{fmtTs(data.price_history[data.price_history.length - 1].timestamp)}</strong></span>
+            )}
+            {data.technicals && (
+              <span>📐 Técnicos: <strong style={{ color: "var(--text)" }}>{fmtTs(data.technicals.timestamp)}</strong></span>
+            )}
+            {data.signal && (
+              <span>🎯 Señal generada: <strong style={{ color: "var(--text)" }}>{fmtTs(data.signal.generated_at)}</strong></span>
+            )}
+            {data.signal && (
+              <span>⏱ Vence: <strong style={{ color: "var(--text)" }}>{fmtTs(data.signal.expires_at)}</strong></span>
+            )}
+          </div>
+        )}
+
         {/* Body */}
         <div style={{ padding: "20px" }}>
           {isLoading && (
@@ -387,6 +409,18 @@ function ReasoningPanel({ reasoning }: { reasoning: string[] }) {
 }
 
 // ─── Dots de fuerza ───────────────────────────────────────────────────────────
+
+function fmtTs(ts: string): string {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleString("es-AR", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+  } catch {
+    return ts;
+  }
+}
 
 function StrengthDots({ value }: { value: number }) {
   return (

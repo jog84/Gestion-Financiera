@@ -11,7 +11,9 @@ import { PortfolioChart } from "@/components/investments/PortfolioChart";
 import { PortfolioKPIBar } from "@/components/investments/PortfolioKPIBar";
 import { PositionsTable } from "@/components/investments/PositionsTable";
 import { RebalanceModal } from "@/components/investments/RebalanceModal";
+import { AddInstrumentWidget } from "@/components/investments/AddInstrumentWidget";
 import { SignalsWidget } from "@/components/investments/SignalsWidget";
+import { TickerAnalysisModal } from "@/components/investments/TickerAnalysisModal";
 import { TransactionsTable } from "@/components/investments/TransactionsTable";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -78,6 +80,7 @@ export function Investments() {
   const [refreshing, setRefreshing] = useState(false);
   const [editingPrice, setEditingPrice] = useState<{ id: string; value: string } | null>(null);
   const [transactionKind, setTransactionKind] = useState<"buy" | "sell">("buy");
+  const [analysisTicker, setAnalysisTicker] = useState<string | null>(null);
 
   const { data: investments = [], isLoading } = useQuery({
     queryKey: QK.investments(profileId),
@@ -612,6 +615,8 @@ export function Investments() {
             <InsightsPanel insights={insights.filter((insight) => insight.level !== "info" || insight.action)} />
           </div>
 
+          <AddInstrumentWidget onAnalyze={setAnalysisTicker} />
+
           <SignalsWidget onRegister={handleRegisterSignal} />
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
@@ -696,6 +701,30 @@ export function Investments() {
             />
           )}
         </>
+      )}
+
+      {analysisTicker && (
+        <TickerAnalysisModal
+          ticker={analysisTicker}
+          onClose={() => setAnalysisTicker(null)}
+          onRegister={(ticker, price) => {
+            setAnalysisTicker(null);
+            setInstrType(ticker.length <= 6 ? "cedear" : "otro");
+            setTransactionKind("buy");
+            setForm((prev) => ({
+              ...prev,
+              ticker,
+              name: ticker,
+              price_ars: String(price),
+              transaction_date: new Date().toISOString().slice(0, 10),
+              current_price_ars: String(price),
+              dolar_ccl: currentCcl ? String(currentCcl) : prev.dolar_ccl,
+              notes: "",
+              quantity: "",
+            }));
+            setModalOpen(true);
+          }}
+        />
       )}
 
       <InvestmentFormModal

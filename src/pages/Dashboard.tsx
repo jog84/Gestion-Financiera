@@ -11,6 +11,7 @@ import { MonthSelector } from "@/components/MonthSelector";
 import {
   checkFinancialAlerts, getExpenseBreakdown, getFinancialInsights, getFinancialOverview, getFinancialRecommendations, getMonthlySummary, getRecentTransactions,
 } from "@/lib/api";
+import { getDashboardMode, subscribeDashboardMode, type DashboardMode } from "@/lib/dashboardMode";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { QK } from "@/lib/queryKeys";
 import { useProfile } from "@/app/providers/ProfileProvider";
@@ -90,27 +91,28 @@ function KpiCard({ label, value, badge, sub }: {
       className="transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-[var(--primary)] group"
       style={{
         background: "var(--surface)", border: "1px solid var(--border)",
-        borderRadius: "12px", padding: "20px 24px",
+        borderRadius: "12px", padding: "16px 16px",
         position: "relative", overflow: "hidden"
       }}
     >
       <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-[var(--primary)] to-[var(--accent)] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
       {/* Label row + badge */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-        <span style={{ fontSize: "12px", color: "var(--text-3)", fontWeight: 500, fontFamily: "var(--font-ui)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px", marginBottom: "8px" }}>
+        <span style={{ fontSize: "11px", color: "var(--text-3)", fontWeight: 500, fontFamily: "var(--font-ui)", lineHeight: 1.35 }}>
           {label}
         </span>
-        {badge}
+        <div style={{ flexShrink: 0 }}>{badge}</div>
       </div>
       {/* Value — big, UI font (not mono) like ReactAdmin */}
       <div style={{
-        fontSize: "32px", fontWeight: 700, color: "var(--text)",
-        fontFamily: "var(--font-ui)", letterSpacing: "-0.03em", lineHeight: 1,
+        fontSize: "clamp(18px, 1.9vw, 22px)", fontWeight: 700, color: "var(--text)",
+        fontFamily: "var(--font-ui)", letterSpacing: "-0.03em", lineHeight: 1.05,
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}>
         {value}
       </div>
       {sub && (
-        <div style={{ fontSize: "11px", color: "var(--text-3)", marginTop: "8px", fontFamily: "var(--font-ui)" }}>
+        <div style={{ fontSize: "10px", color: "var(--text-3)", marginTop: "8px", fontFamily: "var(--font-ui)" }}>
           {sub}
         </div>
       )}
@@ -118,9 +120,48 @@ function KpiCard({ label, value, badge, sub }: {
   );
 }
 
+function UpgradeCard({ onActivate }: { onActivate: () => void }) {
+  return (
+    <div
+      style={{
+        background: "linear-gradient(135deg, rgba(67,97,238,0.14) 0%, rgba(14,165,233,0.1) 100%)",
+        border: "1px solid rgba(67,97,238,0.26)",
+        borderRadius: "12px",
+        padding: "16px",
+      }}
+    >
+      <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--primary)", marginBottom: "6px", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+        Pro
+      </div>
+      <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--text)", marginBottom: "6px", lineHeight: 1.2 }}>
+        Activá la vista patrimonial
+      </div>
+      <div style={{ fontSize: "12px", color: "var(--text-3)", lineHeight: 1.5, marginBottom: "12px" }}>
+        Sumá patrimonio, liquidez, inversiones y objetivos desde Configuración.
+      </div>
+      <button
+        onClick={onActivate}
+        style={{
+          padding: "8px 12px",
+          borderRadius: "8px",
+          border: "1px solid rgba(67,97,238,0.24)",
+          background: "rgba(67,97,238,0.12)",
+          color: "var(--primary)",
+          fontSize: "12px",
+          fontWeight: 700,
+          cursor: "pointer",
+          fontFamily: "var(--font-ui)",
+        }}
+      >
+        Ir a Configuración
+      </button>
+    </div>
+  );
+}
+
 function KpiSkeleton() {
   return (
-    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "10px", padding: "20px 24px" }}>
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "10px", padding: "16px 16px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
         <Skel w={90} h={12} r={3} /><Skel w={50} h={20} r={10} />
       </div>
@@ -180,6 +221,7 @@ export function Dashboard() {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [mode, setMode] = useState<DashboardMode>(() => getDashboardMode());
 
   const { data: overview,       isLoading: ls } = useQuery({ queryKey: QK.financialOverview(profileId, year, month), queryFn: () => getFinancialOverview(profileId, year, month) });
   const { data: insights = [],  isLoading: li } = useQuery({ queryKey: QK.financialInsights(profileId, year, month), queryFn: () => getFinancialInsights(profileId, year, month) });
@@ -200,6 +242,8 @@ export function Dashboard() {
     };
   }, [profileId, year, month, qc]);
 
+  useEffect(() => subscribeDashboardMode(setMode), []);
+
   const income         = overview?.total_income ?? 0;
   const expenses       = overview?.total_expenses ?? 0;
   const balance        = overview?.balance ?? 0;
@@ -216,12 +260,19 @@ export function Dashboard() {
 
   const chartData = monthly.map(m => ({ name: MONTH_NAMES[m.month - 1], Ingresos: m.total_income, Gastos: m.total_expenses }));
   const totalBk   = breakdown.reduce((s, c) => s + c.total, 0);
+  const isBasic = mode === "basic";
+  const visibleInsights = isBasic
+    ? insights.filter((insight) => insight.kind !== "portfolio_concentration").slice(0, 2)
+    : insights.slice(0, 3);
+  const visibleRecommendations = isBasic
+    ? recommendations.filter((recommendation) => !["/investments", "/assets", "/goals", "/accounts"].includes(recommendation.action_route ?? "")).slice(0, 2)
+    : recommendations.slice(0, 3);
 
   const tick = { fill: "var(--text-3)", fontSize: 11, fontFamily: "var(--font-ui)" };
   const axis = { axisLine: false as const, tickLine: false as const };
 
   return (
-    <div className="page-enter" style={{ padding: "24px 28px", maxWidth: "1400px" }}>
+    <div className="page-enter" style={{ padding: "24px 20px", maxWidth: "none" }}>
 
       {/* Header */}
       <div style={{ marginBottom: "22px" }}>
@@ -235,7 +286,7 @@ export function Dashboard() {
               {new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(new Date(year, month - 1))}
             </p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end" }}>
             <button
               onClick={() => { const d = new Date(); setYear(d.getFullYear()); setMonth(d.getMonth() + 1); }}
               style={{ padding: "5px 12px", fontSize: "12px", fontWeight: 500, color: "var(--text-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "10px", cursor: "pointer", transition: "all 0.15s", fontFamily: "var(--font-ui)" }}
@@ -258,9 +309,12 @@ export function Dashboard() {
             { l: "Ingresos",    p: "/incomes",      c: "var(--success)" },
             { l: "Gastos",      p: "/expenses",     c: "var(--danger)" },
             { l: "Cuotas",      p: "/installments", c: "var(--warning)" },
-            { l: "Inversiones", p: "/investments",  c: "var(--primary)" },
-            { l: "Patrimonio",  p: "/assets",       c: "var(--cyan)" },
-            { l: "Objetivos",   p: "/goals",        c: "#a855f7" },
+            { l: "Recurrentes", p: "/recurring",    c: "var(--text-2)" },
+            ...(!isBasic ? [
+              { l: "Inversiones", p: "/investments", c: "var(--primary)" },
+              { l: "Patrimonio", p: "/assets", c: "var(--cyan)" },
+              { l: "Objetivos", p: "/goals", c: "#a855f7" },
+            ] : []),
           ].map(({ l, p, c }) => (
             <button key={p} onClick={() => navigate(p)} style={{
               padding: "5px 12px", fontSize: "12px", fontWeight: 500, color: c,
@@ -275,9 +329,24 @@ export function Dashboard() {
       </div>
 
       {/* KPI row */}
-      <div className="animate-fade-in-up" style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "12px", marginBottom: "14px" }}>
+      <div
+        className="animate-fade-in-up"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: "10px",
+          marginBottom: "14px",
+        }}
+      >
         {ls ? (
-          <><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /><KpiSkeleton /></>
+          <>
+            <KpiSkeleton />
+            <KpiSkeleton />
+            <KpiSkeleton />
+            {!isBasic ? <KpiSkeleton /> : null}
+            {!isBasic ? <KpiSkeleton /> : null}
+            {!isBasic ? <KpiSkeleton /> : null}
+          </>
         ) : (
           <>
             <KpiCard
@@ -308,46 +377,56 @@ export function Dashboard() {
                 : `Revisá tus gastos${monthlyFixed > 0 ? ` · Fijos: ${formatCurrency(monthlyFixed)}/mes` : ""}`
               }
             />
-            <KpiCard
-              label="Patrimonio estimado"
-              value={formatCurrency(totalAssets)}
-              badge={<Pill color="var(--primary)" bg="rgba(67,97,238,0.12)">Total</Pill>}
-              sub={liquidAssets > 0 ? `Liquidez disponible: ${formatCurrency(liquidAssets)}` : "Sin colchón líquido cargado"}
-            />
-            <KpiCard
-              label="Tasa de ahorro"
-              value={`${savingsRate.toFixed(1)}%`}
-              badge={
-                savingsRate >= 20
-                  ? <Pill color="var(--success)" bg="var(--success-dim)">En meta</Pill>
-                  : savingsRate > 0
-                    ? <Pill color="var(--warning)" bg="var(--warning-dim)">En progreso</Pill>
-                    : <Pill color="var(--text-3)" bg="var(--surface-3)">Sin ahorro</Pill>
-              }
-              sub="Meta: 20% del ingreso"
-            />
-            <KpiCard
-              label="Cobertura de liquidez"
-              value={liquidityMonths !== null ? `${liquidityMonths.toFixed(1)}m` : "N/D"}
-              badge={
-                liquidityMonths === null
-                  ? <Pill color="var(--text-3)" bg="var(--surface-3)">Sin base</Pill>
-                  : liquidityMonths >= 6
-                    ? <Pill color="var(--success)" bg="var(--success-dim)">Sólida</Pill>
-                    : liquidityMonths >= 3
-                      ? <Pill color="var(--warning)" bg="var(--warning-dim)">Media</Pill>
-                      : <Pill color="var(--danger)" bg="var(--danger-dim)">Baja</Pill>
-              }
-              sub={monthlyFixed > 0 ? `Fijos mensuales: ${formatCurrency(monthlyFixed)}` : "Sin gastos fijos activos"}
-            />
+            {!isBasic ? (
+              <>
+                <KpiCard
+                  label="Tasa de ahorro"
+                  value={`${savingsRate.toFixed(1)}%`}
+                  badge={
+                    savingsRate >= 20
+                      ? <Pill color="var(--success)" bg="var(--success-dim)">En meta</Pill>
+                      : savingsRate > 0
+                        ? <Pill color="var(--warning)" bg="var(--warning-dim)">En progreso</Pill>
+                        : <Pill color="var(--text-3)" bg="var(--surface-3)">Sin ahorro</Pill>
+                  }
+                  sub="Meta: 20% del ingreso"
+                />
+                <KpiCard
+                  label="Patrimonio estimado"
+                  value={formatCurrency(totalAssets)}
+                  badge={<Pill color="var(--primary)" bg="rgba(67,97,238,0.12)">Total</Pill>}
+                  sub={liquidAssets > 0 ? `Liquidez disponible: ${formatCurrency(liquidAssets)}` : "Sin colchón líquido cargado"}
+                />
+                <KpiCard
+                  label="Cobertura de liquidez"
+                  value={liquidityMonths !== null ? `${liquidityMonths.toFixed(1)}m` : "N/D"}
+                  badge={
+                    liquidityMonths === null
+                      ? <Pill color="var(--text-3)" bg="var(--surface-3)">Sin base</Pill>
+                      : liquidityMonths >= 6
+                        ? <Pill color="var(--success)" bg="var(--success-dim)">Sólida</Pill>
+                        : liquidityMonths >= 3
+                          ? <Pill color="var(--warning)" bg="var(--warning-dim)">Media</Pill>
+                          : <Pill color="var(--danger)" bg="var(--danger-dim)">Baja</Pill>
+                  }
+                  sub={monthlyFixed > 0 ? `Fijos mensuales: ${formatCurrency(monthlyFixed)}` : "Sin gastos fijos activos"}
+                />
+              </>
+            ) : null}
           </>
         )}
       </div>
 
+      {isBasic ? (
+        <div style={{ marginBottom: "12px" }}>
+          <UpgradeCard onActivate={() => navigate("/settings")} />
+        </div>
+      ) : null}
+
       <div className="animate-fade-in-up delay-100" style={{ marginBottom: "12px" }}>
         <CardShell
           title="Insights accionables"
-          subtitle="Señales automáticas sobre liquidez, cashflow y riesgo de concentración"
+          subtitle={isBasic ? "Lectura rapida de lo importante del mes" : "Señales automáticas sobre liquidez, cashflow y riesgo de concentración"}
           right={
             insights.length > 0 ? (
               <Pill color="var(--warning)" bg="var(--warning-dim)">{insights.length} activos</Pill>
@@ -355,10 +434,10 @@ export function Dashboard() {
           }
         >
           {li ? (
-            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
+            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: `repeat(${isBasic ? 2 : 3}, minmax(0, 1fr))`, gap: "12px" }}>
               <Skel h={110} r={8} />
               <Skel h={110} r={8} />
-              <Skel h={110} r={8} />
+              {!isBasic ? <Skel h={110} r={8} /> : null}
             </div>
           ) : insights.length === 0 ? (
             <EmptyState
@@ -368,8 +447,8 @@ export function Dashboard() {
               sub="La liquidez, el cashflow y la concentración no muestran desvíos fuertes este mes."
             />
           ) : (
-            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
-              {insights.slice(0, 3).map((insight) => {
+            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: `repeat(${isBasic ? 2 : 3}, minmax(0, 1fr))`, gap: "12px" }}>
+              {visibleInsights.map((insight) => {
                 const tone = insight.severity === "high"
                   ? { fg: "var(--danger)", bg: "var(--danger-dim)" }
                   : insight.severity === "medium"
@@ -426,10 +505,10 @@ export function Dashboard() {
           subtitle="Acciones sugeridas para mejorar ahorro, gasto y diversificación"
         >
           {lrec ? (
-            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
+            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: `repeat(${isBasic ? 2 : 3}, minmax(0, 1fr))`, gap: "12px" }}>
               <Skel h={120} r={8} />
               <Skel h={120} r={8} />
-              <Skel h={120} r={8} />
+              {!isBasic ? <Skel h={120} r={8} /> : null}
             </div>
           ) : recommendations.length === 0 ? (
             <EmptyState
@@ -439,8 +518,8 @@ export function Dashboard() {
               sub="Todavía no veo una acción con impacto claro por encima del ruido normal."
             />
           ) : (
-            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
-              {recommendations.slice(0, 3).map((recommendation) => (
+            <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: `repeat(${isBasic ? 2 : 3}, minmax(0, 1fr))`, gap: "12px" }}>
+              {visibleRecommendations.map((recommendation) => (
                 <div key={recommendation.id} style={{ border: "1px solid var(--border)", borderRadius: "12px", padding: "16px", background: "var(--surface-2)" }}>
                   <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text)", marginBottom: "6px" }}>{recommendation.title}</div>
                   <div style={{ fontSize: "12px", color: "var(--text-3)", lineHeight: 1.5, minHeight: "56px" }}>{recommendation.summary}</div>
@@ -479,7 +558,7 @@ export function Dashboard() {
       </div>
 
       {/* Charts row */}
-      <div className="animate-fade-in-up delay-200" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: "12px", marginBottom: "12px" }}>
+      <div className="animate-fade-in-up delay-200" style={{ display: "grid", gridTemplateColumns: isBasic ? "1fr" : "3fr 2fr", gap: "12px", marginBottom: "12px" }}>
 
         <div style={{ padding: "1px", background: "linear-gradient(90deg, var(--success), var(--danger))", borderRadius: "11px" }}>
           <CardShell
@@ -578,6 +657,17 @@ export function Dashboard() {
           </div>
         </CardShell>
       </div>
+
+      {!isBasic ? (
+        <div style={{ marginBottom: "12px", padding: "14px 16px", borderRadius: "12px", border: "1px solid var(--border)", background: "var(--surface-2)" }}>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text)", marginBottom: "4px" }}>
+            Modo Pro activo
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-3)" }}>
+            Tenés habilitada la vista de patrimonio con inversiones, liquidez y objetivos. Podés cambiar esto desde Configuración.
+          </div>
+        </div>
+      ) : null}
 
       {/* Transactions */}
       <div className="animate-fade-in-up delay-300">

@@ -64,6 +64,9 @@ export const INVALIDATE = {
   onInvestmentChanged: (profileId: string) => [
     QK.investments(profileId),
     QK.portfolioSnapshots(profileId),
+    QK.financialAccounts(profileId),
+    QK.cashOverview(profileId),
+    QK.financialOverview(profileId, new Date().getFullYear(), new Date().getMonth() + 1),
   ] as const,
   onAssetChanged: (profileId: string) => [
     QK.assets(profileId),

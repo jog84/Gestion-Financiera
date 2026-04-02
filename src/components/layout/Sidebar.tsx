@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard, TrendingUp, TrendingDown, CreditCard,
@@ -5,6 +6,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme";
+import { getDashboardMode, subscribeDashboardMode } from "@/lib/dashboardMode";
 import { Logo } from "@/components/ui/Logo";
 import { useProfile } from "@/app/providers/ProfileProvider";
 
@@ -34,6 +36,11 @@ const NAV_GROUPS = [
 export function Sidebar() {
   const { theme, toggle } = useTheme();
   const { profile } = useProfile();
+  const [mode, setMode] = useState(getDashboardMode());
+
+  useEffect(() => subscribeDashboardMode(setMode), []);
+
+  const visibleGroups = mode === "pro" ? NAV_GROUPS : NAV_GROUPS.filter((group) => group.label === "Control");
 
   return (
     <aside
@@ -47,27 +54,26 @@ export function Sidebar() {
     >
       <div
         className="flex items-center gap-3 px-4 transition-colors duration-200"
-        style={{ height: "72px", borderBottom: "1px solid var(--border)" }}
+        style={{ minHeight: "88px", borderBottom: "1px solid var(--border)", paddingTop: "10px", paddingBottom: "10px" }}
       >
         <div
           className="transition-transform duration-200 hover:scale-105 animate-glow"
-          style={{ position: "relative", height: "34px", width: "34px", flexShrink: 0, display: "inline-block", color: "var(--text)" }}
+          style={{ position: "relative", height: "40px", width: "118px", flexShrink: 0, display: "inline-block", color: "var(--text)" }}
         >
           <Logo theme={theme} style={{ width: "100%", height: "100%", display: "block" }} />
         </div>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--text)", lineHeight: 1.2, whiteSpace: "nowrap" }}>
-            {profile?.name ?? "Finanzas Personales"}
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-3)", lineHeight: 1.1, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Hola
           </div>
-          <div style={{ fontSize: "11px", color: "var(--text-3)", marginTop: "4px", display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            <span>{profile?.currency_code ?? "ARS"}</span>
-            <span>{profile?.locale ?? "es-AR"}</span>
+          <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--text)", marginTop: "4px", lineHeight: 1.2, whiteSpace: "nowrap" }}>
+            {profile?.name ?? "Mi Perfil"}
           </div>
         </div>
       </div>
 
       <nav className="flex flex-col flex-1 px-3 py-4" style={{ gap: "14px", overflowY: "auto" }}>
-        {NAV_GROUPS.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.label}>
             <div style={{ fontSize: "10px", fontWeight: 700, color: "var(--text-3)", letterSpacing: "0.1em", textTransform: "uppercase", padding: "0 10px", marginBottom: "6px" }}>
               {group.label}

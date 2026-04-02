@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 // Ruta fija al SQLite de Inversiones AR
@@ -347,4 +347,106 @@ pub async fn fetch_ticker_analysis(ticker: String) -> Result<TickerAnalysis, Str
         price_history,
         macro_snapshot,
     })
+}
+
+// ─── Agregar ticker a Inversiones AR via HTTP ─────────────────────────────────
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AddTickerResult {
+    pub ticker: String,
+    pub has_price: bool,
+    pub bars_count: i64,
+    pub has_technicals: bool,
+    pub has_signal: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AddTickerApiResponse {
+    success: bool,
+    data: Option<AddTickerApiData>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddTickerApiData {
+    ticker: String,
+    has_price: Option<bool>,
+    bars_count: Option<i64>,
+    has_technicals: Option<bool>,
+    has_signal: Option<bool>,
+}
+
+#[tauri::command]
+pub async fn add_ticker_to_inversiones(
+    ticker: String,
+    asset_class: String,
+) -> Result<AddTickerResult, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(90))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let body = serde_json::json!({
+        "ticker": ticker.to_uppercase().trim(),
+        "assetClass": asset_class,
+        "name": ticker.to_uppercase().trim(),
+    });
+
+    let resp = client
+        .post("http://localhost:3001/api/instruments/add")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|_| "Inversiones AR no está corriendo. Iniciá la app primero.".to_string())?;
+
+    let parsed: AddTickerApiResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Error al parsear respuesta: {}", e))?;
+
+    if !parsed.success {
+        return Err(parsed.error.unwrap_or_else(|| "Error desconocido".to_string()));
+    }
+
+    let d = parsed.data.ok_or("Respuesta vacía")?;
+    Ok(AddTickerResult {
+        ticker: d.ticker,
+        has_price: d.has_price.unwrap_or(false),
+        bars_count: d.bars_count.unwrap_or(0),
+        has_technicals: d.has_technicals.unwrap_or(false),
+        has_signal: d.has_signal.unwrap_or(false),
+    })
+}
+
+// ─── Buscar tickers existentes en Inversiones AR ──────────────────────────────
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct InversionesInstrument {
+    pub ticker: String,
+    pub name: String,
+    pub asset_class: String,
+}
+
+#[tauri::command]
+pub async fn search_inversiones_instruments(query: String) -> Result<Vec<InversionesInstrument>, String> {
+    let pool = open_db().await?;
+    let pattern = format!("%{}%", query.to_uppercase());
+
+    let rows: Vec<InversionesInstrument> = sqlx::query_as::<_, InversionesInstrument>(
+        r#"
+        SELECT ticker, name, asset_class
+        FROM instruments
+        WHERE active = 1 AND (ticker LIKE ? OR UPPER(name) LIKE ?)
+        ORDER BY ticker ASC LIMIT 20
+        "#,
+    )
+    .bind(&pattern)
+    .bind(&pattern)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    pool.close().await;
+    Ok(rows)
 }

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { getDashboardMode, setDashboardMode, type DashboardMode } from "@/lib/dashboardMode";
 import {
   getDefaultProfile, updateProfileSettings,
   getDbLocation, setDbLocation, resetDbLocation, copyDbToLocation,
@@ -72,6 +73,7 @@ export function Settings() {
   const qc = useQueryClient();
   const [saved, setSaved] = useState(false);
   const [form, setForm] = useState({ name: "", currency_code: "ARS", locale: "es-AR" });
+  const [dashboardMode, setDashboardModeState] = useState<DashboardMode>(() => getDashboardMode());
 
   // DB location state
   const [folderInput, setFolderInput] = useState("");
@@ -308,6 +310,42 @@ export function Settings() {
                 Guardado
               </span>
             )}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="animate-fade-in-up delay-125" style={{ padding: "20px" }}>
+        <CardHeader>
+          <CardTitle>Modo de la app</CardTitle>
+        </CardHeader>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <p style={{ fontSize: "12px", color: "var(--text-3)", fontFamily: "var(--font-ui)", lineHeight: 1.5 }}>
+            En Basica ves solo la parte de control diario. En Pro se habilita tambien el bloque de patrimonio, inversiones, cuentas y objetivos.
+          </p>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <Button
+              variant={dashboardMode === "basic" ? "primary" : "outline"}
+              onClick={() => {
+                setDashboardMode("basic");
+                setDashboardModeState("basic");
+                toast.success("Modo basico activado");
+              }}
+            >
+              Activar Basica
+            </Button>
+            <Button
+              variant={dashboardMode === "pro" ? "primary" : "outline"}
+              onClick={() => {
+                setDashboardMode("pro");
+                setDashboardModeState("pro");
+                toast.success("Modo pro activado");
+              }}
+            >
+              Activar Pro
+            </Button>
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-2)", fontFamily: "var(--font-ui)" }}>
+            Estado actual: <strong>{dashboardMode === "pro" ? "Pro" : "Basica"}</strong>
           </div>
         </div>
       </Card>

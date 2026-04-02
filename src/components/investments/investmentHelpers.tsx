@@ -23,6 +23,7 @@ export type TickerDetection = {
 export type InvestmentFormState = {
   ticker: string;
   name: string;
+  account_id: string;
   quantity: string;
   price_ars: string;
   dolar_ccl: string;
@@ -51,6 +52,8 @@ export interface EnhancedPosition {
   invertidoUsd: number;
   actualUsd: number;
   gananciaUsd: number;
+  realizedGainArs: number;
+  realizedGainUsd: number;
   weightPct: number;
   count: number;
   entries: InvestmentEntry[];
@@ -112,6 +115,7 @@ export const INVESTMENTS_TD: CSSProperties = {
 export const createEmptyInvestmentForm = (): InvestmentFormState => ({
   ticker: "",
   name: "",
+  account_id: "",
   quantity: "",
   price_ars: "",
   dolar_ccl: "",
@@ -143,8 +147,6 @@ export function effectiveType(
 
 export function buildPositions(
   invs: InvestmentEntry[],
-  totalPortfolioArs: number,
-  sectorTotals: Record<string, number>,
   currentCcl?: number | null,
 ): EnhancedPosition[] {
   const map = new Map<string, { type: InstrumentType; name: string; ticker: string | null; entries: InvestmentEntry[] }>();
@@ -157,42 +159,47 @@ export function buildPositions(
     else map.set(key, { type, name: inv.name, ticker: inv.ticker, entries: [inv] });
   }
 
-  return Array.from(map.entries()).map(([key, { type, name, ticker, entries }]) => {
-    let totalQty = 0;
-    let sumQtyPrice = 0;
+  const basePositions = Array.from(map.entries()).map(([key, { type, name, ticker, entries }]) => {
+    let openQty = 0;
+    let remainingCostArs = 0;
     let currentPriceArs: number | null = null;
-    let invertidoArs = 0;
+    let investedArs = 0;
     let actualArs = 0;
-    let invertidoUsd = 0;
-    let actualUsd = 0;
+    let realizedGainArs = 0;
     let maturityDate: string | null = null;
+    let currentCclValue: number | null = currentCcl ?? null;
 
-    for (const inv of entries) {
-      const c = calcRow(inv, currentCcl);
-      invertidoArs += c.invertidoArs;
-      actualArs += c.actualArs;
-      invertidoUsd += c.invertidoUsd;
-      actualUsd += c.actualUsd;
+    const orderedEntries = [...entries].sort((a, b) =>
+      new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime()
+    );
 
-      if (inv.quantity && inv.price_ars) {
-        totalQty += inv.quantity;
-        sumQtyPrice += inv.quantity * inv.price_ars;
+    for (const inv of orderedEntries) {
+      if (inv.transaction_kind === "sell") {
+        openQty = Math.max(0, openQty - (inv.quantity ?? 0));
+        remainingCostArs = Math.max(0, remainingCostArs - (inv.realized_cost_ars ?? 0));
+        realizedGainArs += inv.realized_gain_ars ?? 0;
+      } else {
+        const cashArs = inv.cash_amount_ars ?? 0;
+        openQty += inv.quantity ?? 0;
+        remainingCostArs += cashArs;
         if (inv.current_price_ars) currentPriceArs = inv.current_price_ars;
+        if (!currentCclValue && inv.dolar_ccl) currentCclValue = inv.dolar_ccl;
       }
 
       if (inv.fecha_vencimiento) maturityDate = inv.fecha_vencimiento;
     }
 
-    const ppp = (type === "cedear" || type === "accion" || type === "fci") && totalQty > 0
-      ? sumQtyPrice / totalQty
+    const ppp = (type === "cedear" || type === "accion" || type === "fci" || type === "crypto" || type === "bono") && openQty > 0
+      ? remainingCostArs / openQty
       : null;
-    const weightPct = totalPortfolioArs > 0 ? (actualArs / totalPortfolioArs) * 100 : 0;
+    investedArs = remainingCostArs;
+    actualArs = type === "plazo_fijo" || type === "otro"
+      ? orderedEntries.filter((entry) => entry.transaction_kind !== "sell").reduce((sum, entry) => sum + calcRow(entry, currentCcl).actualArs, 0)
+      : (currentPriceArs && openQty > 0 ? currentPriceArs * openQty : investedArs);
+    const investedUsd = currentCclValue && currentCclValue > 0 ? investedArs / currentCclValue : investedArs;
+    const actualUsd = currentCclValue && currentCclValue > 0 ? actualArs / currentCclValue : actualArs;
+    const realizedGainUsd = currentCclValue && currentCclValue > 0 ? realizedGainArs / currentCclValue : realizedGainArs;
     const sector = getSector(ticker, type);
-    const sectorWeight = totalPortfolioArs > 0 && sectorTotals[sector]
-      ? sectorTotals[sector] / totalPortfolioArs
-      : 0;
-    const returnPct = invertidoArs > 0 ? (actualArs - invertidoArs) / invertidoArs : 0;
-    const signals = calcPositionSignals(weightPct / 100, returnPct, sectorWeight, sector);
 
     return {
       key,
@@ -204,19 +211,42 @@ export function buildPositions(
       sector,
       ppp,
       currentPriceArs,
-      totalQty,
-      invertidoArs,
+      totalQty: openQty,
+      invertidoArs: investedArs,
       actualArs,
-      gananciaArs: actualArs - invertidoArs,
-      invertidoUsd,
+      gananciaArs: actualArs - investedArs,
+      invertidoUsd: investedUsd,
       actualUsd,
-      gananciaUsd: actualUsd - invertidoUsd,
-      weightPct,
+      gananciaUsd: actualUsd - investedUsd,
+      realizedGainArs,
+      realizedGainUsd,
+      weightPct: 0,
       count: entries.length,
       entries,
       maturityDate,
-      signals,
+      signals: [],
+      sectorWeight: 0,
+    };
+  }).filter((position) => position.actualArs > 0 || position.invertidoArs > 0);
+
+  const totalPortfolioArs = basePositions.reduce((sum, position) => sum + position.actualArs, 0);
+  const sectorTotals = basePositions.reduce<Record<string, number>>((acc, position) => {
+    acc[position.sector] = (acc[position.sector] ?? 0) + position.actualArs;
+    return acc;
+  }, {});
+
+  return basePositions.map((position) => {
+    const weightPct = totalPortfolioArs > 0 ? (position.actualArs / totalPortfolioArs) * 100 : 0;
+    const sectorWeight = totalPortfolioArs > 0 && sectorTotals[position.sector]
+      ? sectorTotals[position.sector] / totalPortfolioArs
+      : 0;
+    const returnPct = position.invertidoArs > 0 ? (position.actualArs - position.invertidoArs) / position.invertidoArs : 0;
+
+    return {
+      ...position,
+      weightPct,
       sectorWeight,
+      signals: calcPositionSignals(weightPct / 100, returnPct, sectorWeight, position.sector),
     };
   }).sort((a, b) => b.actualArs - a.actualArs);
 }

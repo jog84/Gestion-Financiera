@@ -2,6 +2,7 @@ use serde::Serialize;
 use sqlx::SqlitePool;
 use chrono::Utc;
 use uuid::Uuid;
+use crate::services::investments::compute_open_positions;
 
 #[derive(Debug, Serialize)]
 pub struct DashboardSummary {
@@ -151,15 +152,11 @@ pub async fn get_financial_overview(
     .await
     .map_err(|e| e.to_string())?;
 
-    let (investment_assets,): (f64,) = sqlx::query_as(
-        "SELECT COALESCE(SUM(COALESCE(current_value, amount_invested)), 0.0)
-         FROM investment_entries
-         WHERE profile_id = ?",
-    )
-    .bind(profile_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let investment_assets = compute_open_positions(pool, profile_id)
+        .await?
+        .iter()
+        .map(|position| position.current_value_ars)
+        .sum::<f64>();
 
     let liquid_assets = asset_rows
         .iter()
@@ -517,15 +514,11 @@ async fn build_financial_insights(
         });
     }
 
-    let positions: Vec<(String, f64)> = sqlx::query_as(
-        "SELECT COALESCE(NULLIF(TRIM(name), ''), 'Activo sin nombre'), COALESCE(current_value, amount_invested)
-         FROM investment_entries
-         WHERE profile_id = ?",
-    )
-    .bind(profile_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let positions: Vec<(String, f64)> = compute_open_positions(pool, profile_id)
+        .await?
+        .into_iter()
+        .map(|position| (position.key, position.current_value_ars))
+        .collect();
 
     let total_invested_value: f64 = positions.iter().map(|(_, value)| *value).sum();
     if total_invested_value > 0.0 {
@@ -623,15 +616,11 @@ async fn build_financial_recommendations(
         }
     }
 
-    let positions: Vec<(String, f64)> = sqlx::query_as(
-        "SELECT COALESCE(NULLIF(TRIM(name), ''), 'Activo sin nombre'), COALESCE(current_value, amount_invested)
-         FROM investment_entries
-         WHERE profile_id = ?",
-    )
-    .bind(profile_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let positions: Vec<(String, f64)> = compute_open_positions(pool, profile_id)
+        .await?
+        .into_iter()
+        .map(|position| (position.key, position.current_value_ars))
+        .collect();
 
     let total_portfolio: f64 = positions.iter().map(|(_, value)| *value).sum();
     if total_portfolio > 0.0 {

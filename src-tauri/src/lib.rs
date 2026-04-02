@@ -23,7 +23,7 @@ use commands::{
     reports::{get_annual_report, get_recent_transactions, get_yoy_comparison},
     settings::{get_default_profile, update_profile, get_db_location, set_db_location, reset_db_location, copy_db_to_location},
     prices::{fetch_prices, fetch_ccl, update_prices_by_ticker},
-    signals::{fetch_inversiones_signals, fetch_ticker_analysis},
+    signals::{fetch_inversiones_signals, fetch_ticker_analysis, add_ticker_to_inversiones, search_inversiones_instruments},
     files::save_excel_file,
     sources::{create_expense_category, create_income_source, get_expense_categories, get_income_sources, update_income_source, delete_income_source, update_expense_category, delete_expense_category},
     themes::{get_themes, create_theme, activate_theme, deactivate_all_themes, delete_theme},
@@ -161,6 +161,8 @@ pub fn run() {
             // Inversiones AR integration
             fetch_inversiones_signals,
             fetch_ticker_analysis,
+            add_ticker_to_inversiones,
+            search_inversiones_instruments,
             // Themes
             get_themes,
             create_theme,

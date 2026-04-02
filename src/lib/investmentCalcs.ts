@@ -33,6 +33,27 @@ export interface CalcResult {
  *                    se usa el dolar_ccl de compra → gananciaPctUsd === gananciaPctArs
  */
 export function calcRow(inv: InvestmentEntry, cclActual?: number | null): CalcResult {
+  if (inv.transaction_kind === "sell") {
+    const realizedCostArs = inv.realized_cost_ars ?? inv.amount_invested ?? 0;
+    const proceedsArs = inv.cash_amount_ars ?? inv.current_value ?? 0;
+    const gainArs = inv.realized_gain_ars ?? (proceedsArs - realizedCostArs);
+    const pctArs = realizedCostArs > 0 ? r2((gainArs / realizedCostArs) * 100) : 0;
+    const ccl = cclActual && cclActual > 0 ? cclActual : (inv.dolar_ccl ?? 0);
+    const toUsd = (ars: number) => ccl > 0 ? r2(ars / ccl) : 0;
+
+    return {
+      invertidoArs: realizedCostArs,
+      actualArs: proceedsArs,
+      gananciaArs: gainArs,
+      gananciaPctArs: pctArs,
+      invertidoUsd: toUsd(realizedCostArs),
+      actualUsd: toUsd(proceedsArs),
+      gananciaUsd: toUsd(gainArs),
+      gananciaPctUsd: pctArs,
+      detalles: `${fNum(inv.quantity ?? 0, 4)} vendidas${inv.account_name ? ` · A ${inv.account_name}` : ""}`,
+    };
+  }
+
   const type = inv.instrument_type ?? "cedear";
   const qty = inv.quantity ?? 0;
   const priceArs = inv.price_ars ?? 0;

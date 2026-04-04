@@ -1,8 +1,8 @@
+use crate::services::investments::compute_open_positions;
+use chrono::Utc;
 use serde::Serialize;
 use sqlx::SqlitePool;
-use chrono::Utc;
 use uuid::Uuid;
-use crate::services::investments::compute_open_positions;
 
 #[derive(Debug, Serialize)]
 pub struct DashboardSummary {
@@ -103,8 +103,18 @@ pub struct FinancialRecommendation {
 }
 
 const MONTH_NAMES: [&str; 12] = [
-    "Enero","Febrero","Marzo","Abril","Mayo","Junio",
-    "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
 ];
 
 pub async fn get_dashboard_summary(
@@ -132,13 +142,12 @@ pub async fn get_financial_overview(
 ) -> Result<FinancialOverview, String> {
     let (total_income, total_expenses) = get_month_totals(pool, profile_id, year, month).await?;
 
-    let asset_rows: Vec<(Option<String>, f64)> = sqlx::query_as(
-        "SELECT category, value FROM asset_snapshots WHERE profile_id = ?",
-    )
-    .bind(profile_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let asset_rows: Vec<(Option<String>, f64)> =
+        sqlx::query_as("SELECT category, value FROM asset_snapshots WHERE profile_id = ?")
+            .bind(profile_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let (accounts_total, accounts_liquid): (f64, f64) = sqlx::query_as(
         "SELECT
@@ -172,7 +181,12 @@ pub async fn get_financial_overview(
 
     let physical_assets = asset_rows
         .iter()
-        .filter(|(category, _)| !matches!(category.as_deref(), Some("efectivo") | Some("inversion") | Some("cripto")))
+        .filter(|(category, _)| {
+            !matches!(
+                category.as_deref(),
+                Some("efectivo") | Some("inversion") | Some("cripto")
+            )
+        })
         .map(|(_, value)| *value)
         .sum::<f64>();
 
@@ -187,7 +201,9 @@ pub async fn get_financial_overview(
     .map_err(|e| e.to_string())?
     .0;
 
-    let total_assets = asset_rows.iter().map(|(_, value)| *value).sum::<f64>() + investment_assets + accounts_total;
+    let total_assets = asset_rows.iter().map(|(_, value)| *value).sum::<f64>()
+        + investment_assets
+        + accounts_total;
     let total_investment_assets = investment_assets + manual_investment_assets;
     let savings_rate = if total_income > 0.0 {
         (total_income - total_expenses) / total_income * 100.0
@@ -245,7 +261,10 @@ pub async fn check_financial_alerts(
     let now = Utc::now().to_rfc3339();
 
     for insight in &insights {
-        if !matches!(insight.kind.as_str(), "low_liquidity" | "negative_cashflow" | "portfolio_concentration") {
+        if !matches!(
+            insight.kind.as_str(),
+            "low_liquidity" | "negative_cashflow" | "portfolio_concentration"
+        ) {
             continue;
         }
 
@@ -334,14 +353,18 @@ pub async fn get_recent_transactions(
             description: desc,
             source_or_category: src,
         })
-        .chain(expenses.into_iter().map(|(id, amount, date, desc, cat)| RecentTransaction {
-            id,
-            kind: "expense".to_string(),
-            amount,
-            transaction_date: date,
-            description: desc,
-            source_or_category: cat,
-        }))
+        .chain(
+            expenses
+                .into_iter()
+                .map(|(id, amount, date, desc, cat)| RecentTransaction {
+                    id,
+                    kind: "expense".to_string(),
+                    amount,
+                    transaction_date: date,
+                    description: desc,
+                    source_or_category: cat,
+                }),
+        )
         .collect();
 
     combined.sort_by(|a, b| b.transaction_date.cmp(&a.transaction_date));
@@ -357,7 +380,8 @@ pub async fn get_annual_report(
     let mut rows = Vec::new();
 
     for month in 1i64..=12 {
-        let (total_income, total_expenses) = get_month_totals(pool, profile_id, year, month).await?;
+        let (total_income, total_expenses) =
+            get_month_totals(pool, profile_id, year, month).await?;
         rows.push(AnnualRow {
             month,
             month_name: MONTH_NAMES[(month - 1) as usize].to_string(),
@@ -462,7 +486,11 @@ async fn build_financial_insights(
 
     if let Some(liquidity_months) = overview.liquidity_months {
         if liquidity_months < 3.0 {
-            let severity = if liquidity_months < 1.0 { "high" } else { "medium" };
+            let severity = if liquidity_months < 1.0 {
+                "high"
+            } else {
+                "medium"
+            };
             insights.push(FinancialInsight {
                 id: "low_liquidity".to_string(),
                 kind: "low_liquidity".to_string(),
@@ -483,7 +511,12 @@ async fn build_financial_insights(
         insights.push(FinancialInsight {
             id: "negative_cashflow".to_string(),
             kind: "negative_cashflow".to_string(),
-            severity: if overview.savings_rate < -10.0 { "high" } else { "medium" }.to_string(),
+            severity: if overview.savings_rate < -10.0 {
+                "high"
+            } else {
+                "medium"
+            }
+            .to_string(),
             title: "Mes con cashflow negativo".to_string(),
             body: format!(
                 "Tus gastos superan a tus ingresos por {} en {:02}/{}.",
@@ -497,7 +530,8 @@ async fn build_financial_insights(
         });
     }
 
-    if overview.total_income > 0.0 && overview.monthly_fixed_expenses / overview.total_income >= 0.7 {
+    if overview.total_income > 0.0 && overview.monthly_fixed_expenses / overview.total_income >= 0.7
+    {
         let fixed_ratio = overview.monthly_fixed_expenses / overview.total_income * 100.0;
         insights.push(FinancialInsight {
             id: "fixed_expense_pressure".to_string(),
@@ -528,7 +562,10 @@ async fn build_financial_insights(
             *entry += value;
         }
 
-        if let Some((name, value)) = by_name.iter().max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal)) {
+        if let Some((name, value)) = by_name
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        {
             let concentration = value / total_invested_value * 100.0;
             if concentration >= 50.0 {
                 insights.push(FinancialInsight {
@@ -630,7 +667,10 @@ async fn build_financial_recommendations(
             *entry += value;
         }
 
-        if let Some((largest_name, largest_value)) = by_name.iter().max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal)) {
+        if let Some((largest_name, largest_value)) = by_name
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        {
             let concentration = largest_value / total_portfolio;
             let target_weight = 0.35;
             if concentration > target_weight {

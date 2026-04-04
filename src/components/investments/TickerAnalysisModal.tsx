@@ -120,7 +120,7 @@ export function TickerAnalysisModal({ ticker, onClose, onRegister }: Props) {
           {error && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-muted)", padding: "20px" }}>
               <AlertCircle size={14} />
-              <span style={{ fontSize: "13px" }}>No se encontró análisis para {ticker} en Inversiones AR.</span>
+              <span style={{ fontSize: "13px" }}>No se pudo cargar el análisis de {ticker} desde Inversiones AR.</span>
             </div>
           )}
           {data && <AnalysisBody data={data} onRegister={onRegister} />}

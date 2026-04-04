@@ -15,6 +15,7 @@ import { exportIncomesTemplate, importIncomes } from "@/lib/excel";
 import { toast } from "sonner";
 import { useLocation, useNavigate } from "react-router-dom";
 import { QK } from "@/lib/queryKeys";
+import { invalidateIncomeState } from "@/lib/queryInvalidation";
 import { useProfile } from "@/app/providers/ProfileProvider";
 import { CashflowTableCard } from "@/components/cashflow/CashflowTableCard";
 import { CashflowEmptyState } from "@/components/cashflow/CashflowEmptyState";
@@ -79,14 +80,6 @@ export function Incomes() {
   const total = incomes.reduce((sum, i) => sum + i.amount, 0);
   const paged = incomes.slice(page * pageSize, (page + 1) * pageSize);
 
-  const invalidateFinancialState = () => {
-    qc.invalidateQueries({ queryKey: QK.incomes(profileId, year, month) });
-    qc.invalidateQueries({ queryKey: QK.dashboard(profileId, year, month) });
-    qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, year, month) });
-    qc.invalidateQueries({ queryKey: QK.financialAccounts(profileId) });
-    qc.invalidateQueries({ queryKey: QK.cashOverview(profileId) });
-  };
-
   const addMutation = useMutation({
     mutationFn: () =>
       createIncome({
@@ -99,7 +92,7 @@ export function Incomes() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      invalidateFinancialState();
+      void invalidateIncomeState(qc, profileId);
       setModalOpen(false);
       setForm({ amount: "", transaction_date: new Date().toISOString().split("T")[0], account_id: "", source_id: "", description: "", notes: "" });
       toast.success("Ingreso registrado correctamente");
@@ -110,7 +103,7 @@ export function Incomes() {
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateIncome>[1] }) =>
       updateIncome(id, payload),
     onSuccess: () => {
-      invalidateFinancialState();
+      void invalidateIncomeState(qc, profileId);
       toast.success("Ingreso actualizado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -119,7 +112,7 @@ export function Incomes() {
   const deleteMutation = useMutation({
     mutationFn: deleteIncome,
     onSuccess: () => {
-      invalidateFinancialState();
+      void invalidateIncomeState(qc, profileId);
       setDeleteId(null);
       toast.success("Ingreso eliminado");
     },
@@ -140,7 +133,7 @@ export function Incomes() {
         await createIncome({ profile_id: profileId, amount: r.amount, transaction_date: r.transaction_date, description: r.description || undefined, notes: r.notes || undefined });
         ok++;
       }
-      invalidateFinancialState();
+      void invalidateIncomeState(qc, profileId);
       toast.success(`${ok} ingreso(s) importado(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");

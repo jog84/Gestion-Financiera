@@ -2,7 +2,8 @@ use sqlx::SqlitePool;
 
 use crate::services::investments::{
     create_investment as create_investment_entry, delete_investment as delete_investment_entry,
-    list_investments, list_portfolio_snapshots, save_portfolio_snapshot as persist_portfolio_snapshot,
+    list_investments, list_portfolio_snapshots,
+    save_portfolio_snapshot as persist_portfolio_snapshot,
     update_investment_value as update_investment_quote, CreateInvestmentPayload, InvestmentEntry,
     PortfolioSnapshot,
 };

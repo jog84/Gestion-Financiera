@@ -110,10 +110,7 @@ pub async fn update_goal_status(
 }
 
 #[tauri::command]
-pub async fn delete_goal(
-    pool: tauri::State<'_, SqlitePool>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_goal(pool: tauri::State<'_, SqlitePool>, id: String) -> Result<(), String> {
     sqlx::query("DELETE FROM goal_entries WHERE id = ?")
         .bind(&id)
         .execute(pool.inner())

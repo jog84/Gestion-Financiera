@@ -1,8 +1,7 @@
+use crate::commands::inversiones_integration::{
+    open_inversiones_db, resolve_inversiones_api_base_url,
+};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
-
-// Ruta fija al SQLite de Inversiones AR
-const INVERSIONES_DB_PATH: &str = "E:/Proyectos/Inversiones/data/inversiones.db";
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
 
@@ -141,7 +140,6 @@ struct PriceRow {
 
 #[derive(sqlx::FromRow)]
 struct InstrumentRow {
-    ticker: String,
     name: String,
     asset_class: String,
 }
@@ -182,18 +180,13 @@ fn row_to_signal(r: SignalRow) -> (InversionesSignal, Option<serde_json::Value>)
     (signal, macro_snap)
 }
 
-async fn open_db() -> Result<SqlitePool, String> {
-    let db_url = format!("sqlite://{}?mode=ro", INVERSIONES_DB_PATH);
-    SqlitePool::connect(&db_url)
-        .await
-        .map_err(|_| "No se encontró la base de datos de Inversiones AR.".to_string())
-}
-
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn fetch_inversiones_signals() -> Result<Vec<InversionesSignal>, String> {
-    let pool = open_db().await?;
+pub async fn fetch_inversiones_signals(
+    app: tauri::AppHandle,
+) -> Result<Vec<InversionesSignal>, String> {
+    let pool = open_inversiones_db(&app).await?;
 
     let rows: Vec<SignalRow> = sqlx::query_as::<_, SignalRow>(
         r#"
@@ -217,13 +210,16 @@ pub async fn fetch_inversiones_signals() -> Result<Vec<InversionesSignal>, Strin
 }
 
 #[tauri::command]
-pub async fn fetch_ticker_analysis(ticker: String) -> Result<TickerAnalysis, String> {
-    let pool = open_db().await?;
+pub async fn fetch_ticker_analysis(
+    app: tauri::AppHandle,
+    ticker: String,
+) -> Result<TickerAnalysis, String> {
+    let pool = open_inversiones_db(&app).await?;
     let t = ticker.to_uppercase();
 
     // Instrumento base
     let instr: Option<InstrumentRow> = sqlx::query_as::<_, InstrumentRow>(
-        "SELECT ticker, name, asset_class FROM instruments WHERE ticker = ? AND active = 1",
+        "SELECT name, asset_class FROM instruments WHERE ticker = ? AND active = 1",
     )
     .bind(&t)
     .fetch_optional(&pool)
@@ -379,6 +375,7 @@ struct AddTickerApiData {
 
 #[tauri::command]
 pub async fn add_ticker_to_inversiones(
+    app: tauri::AppHandle,
     ticker: String,
     asset_class: String,
 ) -> Result<AddTickerResult, String> {
@@ -394,11 +391,14 @@ pub async fn add_ticker_to_inversiones(
     });
 
     let resp = client
-        .post("http://localhost:3001/api/instruments/add")
+        .post(format!(
+            "{}/api/instruments/add",
+            resolve_inversiones_api_base_url(&app)
+        ))
         .json(&body)
         .send()
         .await
-        .map_err(|_| "Inversiones AR no está corriendo. Iniciá la app primero.".to_string())?;
+        .map_err(|_| "Inversiones AR no está disponible. Verificá la URL configurada en INVERSIONES_AR_URL o iniciá el servicio.".to_string())?;
 
     let parsed: AddTickerApiResponse = resp
         .json()
@@ -406,7 +406,9 @@ pub async fn add_ticker_to_inversiones(
         .map_err(|e| format!("Error al parsear respuesta: {}", e))?;
 
     if !parsed.success {
-        return Err(parsed.error.unwrap_or_else(|| "Error desconocido".to_string()));
+        return Err(parsed
+            .error
+            .unwrap_or_else(|| "Error desconocido".to_string()));
     }
 
     let d = parsed.data.ok_or("Respuesta vacía")?;
@@ -429,8 +431,11 @@ pub struct InversionesInstrument {
 }
 
 #[tauri::command]
-pub async fn search_inversiones_instruments(query: String) -> Result<Vec<InversionesInstrument>, String> {
-    let pool = open_db().await?;
+pub async fn search_inversiones_instruments(
+    app: tauri::AppHandle,
+    query: String,
+) -> Result<Vec<InversionesInstrument>, String> {
+    let pool = open_inversiones_db(&app).await?;
     let pattern = format!("%{}%", query.to_uppercase());
 
     let rows: Vec<InversionesInstrument> = sqlx::query_as::<_, InversionesInstrument>(

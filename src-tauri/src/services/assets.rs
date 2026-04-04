@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::services::periods::{get_or_create_period, get_profile_id_for_record, ProfileOwnedTable};
+use crate::services::periods::{
+    get_or_create_period, get_profile_id_for_record, ProfileOwnedTable,
+};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AssetSnapshot {
@@ -36,7 +38,10 @@ pub struct UpdateAssetPayload {
     pub notes: Option<String>,
 }
 
-pub async fn list_assets(pool: &SqlitePool, profile_id: &str) -> Result<Vec<AssetSnapshot>, String> {
+pub async fn list_assets(
+    pool: &SqlitePool,
+    profile_id: &str,
+) -> Result<Vec<AssetSnapshot>, String> {
     sqlx::query_as::<_, AssetSnapshot>(
         "SELECT id, profile_id, period_id, name, category, value, snapshot_date, notes
          FROM asset_snapshots WHERE profile_id = ? ORDER BY snapshot_date DESC",

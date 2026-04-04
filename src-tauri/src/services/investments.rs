@@ -163,9 +163,14 @@ pub async fn create_investment(
 ) -> Result<InvestmentEntry, String> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
-    let period_id = get_or_create_period(pool, &payload.profile_id, &payload.transaction_date).await?;
-    let instrument_type = payload.instrument_type.unwrap_or_else(|| "cedear".to_string());
-    let transaction_kind = payload.transaction_kind.unwrap_or_else(|| "buy".to_string());
+    let period_id =
+        get_or_create_period(pool, &payload.profile_id, &payload.transaction_date).await?;
+    let instrument_type = payload
+        .instrument_type
+        .unwrap_or_else(|| "cedear".to_string());
+    let transaction_kind = payload
+        .transaction_kind
+        .unwrap_or_else(|| "buy".to_string());
     let cash_amount_ars = compute_cash_amount_ars(
         &instrument_type,
         payload.quantity,
@@ -175,42 +180,50 @@ pub async fn create_investment(
         payload.current_value,
     );
 
-    let (amount_invested, current_value, realized_cost_ars, realized_gain_ars) = if transaction_kind == "sell" {
-        let (available_qty, available_cost_ars) = compute_open_position_state(
-            pool,
-            &payload.profile_id,
-            payload.ticker.as_deref().unwrap_or(&payload.name),
-            payload.ticker.as_deref(),
-        )
-        .await?;
+    let (amount_invested, current_value, realized_cost_ars, realized_gain_ars) =
+        if transaction_kind == "sell" {
+            let (available_qty, available_cost_ars) = compute_open_position_state(
+                pool,
+                &payload.profile_id,
+                payload.ticker.as_deref().unwrap_or(&payload.name),
+                payload.ticker.as_deref(),
+            )
+            .await?;
 
-        let sell_qty = payload.quantity.unwrap_or(0.0);
-        if sell_qty <= 0.0 {
-            return Err("La venta requiere una cantidad mayor a cero".to_string());
-        }
-        if available_qty + 1e-9 < sell_qty {
-            return Err(format!(
-                "No hay cantidad suficiente para vender. Disponible: {:.4}",
-                available_qty
-            ));
-        }
-        if payload.account_id.is_none() {
-            return Err("La venta debe acreditarse en una cuenta para reflejar la liquidez".to_string());
-        }
+            let sell_qty = payload.quantity.unwrap_or(0.0);
+            if sell_qty <= 0.0 {
+                return Err("La venta requiere una cantidad mayor a cero".to_string());
+            }
+            if available_qty + 1e-9 < sell_qty {
+                return Err(format!(
+                    "No hay cantidad suficiente para vender. Disponible: {:.4}",
+                    available_qty
+                ));
+            }
+            if payload.account_id.is_none() {
+                return Err(
+                    "La venta debe acreditarse en una cuenta para reflejar la liquidez".to_string(),
+                );
+            }
 
-        let avg_cost_ars = if available_qty > 0.0 {
-            available_cost_ars / available_qty
+            let avg_cost_ars = if available_qty > 0.0 {
+                available_cost_ars / available_qty
+            } else {
+                0.0
+            };
+            let realized_cost = round2(avg_cost_ars * sell_qty);
+            let proceeds = cash_amount_ars.unwrap_or(0.0);
+            let realized_gain = round2(proceeds - realized_cost);
+
+            (
+                realized_cost,
+                Some(proceeds),
+                Some(realized_cost),
+                Some(realized_gain),
+            )
         } else {
-            0.0
+            (payload.amount_invested, payload.current_value, None, None)
         };
-        let realized_cost = round2(avg_cost_ars * sell_qty);
-        let proceeds = cash_amount_ars.unwrap_or(0.0);
-        let realized_gain = round2(proceeds - realized_cost);
-
-        (realized_cost, Some(proceeds), Some(realized_cost), Some(realized_gain))
-    } else {
-        (payload.amount_invested, payload.current_value, None, None)
-    };
 
     sqlx::query(
         "INSERT INTO investment_entries
@@ -284,7 +297,10 @@ pub async fn delete_investment(pool: &SqlitePool, id: &str) -> Result<(), String
     let entry = get_investment_by_id(pool, id).await?;
 
     if entry.transaction_kind == "buy" && would_break_position_sequence(pool, &entry).await? {
-        return Err("No se puede eliminar esta compra porque dejaría ventas posteriores sin respaldo".to_string());
+        return Err(
+            "No se puede eliminar esta compra porque dejaría ventas posteriores sin respaldo"
+                .to_string(),
+        );
     }
 
     sqlx::query("DELETE FROM investment_entries WHERE id = ?")
@@ -295,7 +311,11 @@ pub async fn delete_investment(pool: &SqlitePool, id: &str) -> Result<(), String
 
     if let Some(account_id) = entry.account_id.as_deref() {
         let cash = entry.cash_amount_ars.unwrap_or(0.0);
-        let delta = if entry.transaction_kind == "sell" { -cash } else { cash };
+        let delta = if entry.transaction_kind == "sell" {
+            -cash
+        } else {
+            cash
+        };
         apply_account_balance_delta(pool, Some(account_id), delta).await?;
     }
     Ok(())
@@ -309,7 +329,10 @@ async fn get_investment_by_id(pool: &SqlitePool, id: &str) -> Result<InvestmentE
         .map_err(|e| e.to_string())
 }
 
-pub async fn compute_open_positions(pool: &SqlitePool, profile_id: &str) -> Result<Vec<OpenInvestmentPosition>, String> {
+pub async fn compute_open_positions(
+    pool: &SqlitePool,
+    profile_id: &str,
+) -> Result<Vec<OpenInvestmentPosition>, String> {
     let investments = list_investments(pool, profile_id).await?;
     Ok(aggregate_open_positions(&investments))
 }
@@ -321,7 +344,8 @@ pub struct OpenInvestmentPosition {
 }
 
 fn aggregate_open_positions(entries: &[InvestmentEntry]) -> Vec<OpenInvestmentPosition> {
-    let mut grouped: std::collections::BTreeMap<String, Vec<&InvestmentEntry>> = std::collections::BTreeMap::new();
+    let mut grouped: std::collections::BTreeMap<String, Vec<&InvestmentEntry>> =
+        std::collections::BTreeMap::new();
     for entry in entries {
         grouped
             .entry(investment_key(entry.ticker.as_deref(), &entry.name))
@@ -334,9 +358,15 @@ fn aggregate_open_positions(entries: &[InvestmentEntry]) -> Vec<OpenInvestmentPo
     for (key, rows) in grouped {
         let mut ordered = rows;
         ordered.sort_by(|a, b| {
-            a.transaction_date
-                .cmp(&b.transaction_date)
-                .then_with(|| if a.transaction_kind == b.transaction_kind { std::cmp::Ordering::Equal } else if a.transaction_kind == "buy" { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater })
+            a.transaction_date.cmp(&b.transaction_date).then_with(|| {
+                if a.transaction_kind == b.transaction_kind {
+                    std::cmp::Ordering::Equal
+                } else if a.transaction_kind == "buy" {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            })
         });
 
         let mut remaining_qty = 0.0_f64;
@@ -347,7 +377,8 @@ fn aggregate_open_positions(entries: &[InvestmentEntry]) -> Vec<OpenInvestmentPo
             let qty = row.quantity.unwrap_or(0.0);
             if row.transaction_kind == "sell" {
                 if row.realized_cost_ars.unwrap_or(0.0) > 0.0 {
-                    remaining_cost_ars = (remaining_cost_ars - row.realized_cost_ars.unwrap_or(0.0)).max(0.0);
+                    remaining_cost_ars =
+                        (remaining_cost_ars - row.realized_cost_ars.unwrap_or(0.0)).max(0.0);
                 }
                 remaining_qty = (remaining_qty - qty).max(0.0);
             } else {
@@ -366,7 +397,10 @@ fn aggregate_open_positions(entries: &[InvestmentEntry]) -> Vec<OpenInvestmentPo
         };
 
         if current_value_ars > 0.0 || remaining_cost_ars > 0.0 {
-            positions.push(OpenInvestmentPosition { key, current_value_ars });
+            positions.push(OpenInvestmentPosition {
+                key,
+                current_value_ars,
+            });
         }
     }
 
@@ -387,9 +421,15 @@ async fn compute_open_position_state(
         .collect();
 
     relevant.sort_by(|a, b| {
-        a.transaction_date
-            .cmp(&b.transaction_date)
-            .then_with(|| if a.transaction_kind == b.transaction_kind { std::cmp::Ordering::Equal } else if a.transaction_kind == "buy" { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater })
+        a.transaction_date.cmp(&b.transaction_date).then_with(|| {
+            if a.transaction_kind == b.transaction_kind {
+                std::cmp::Ordering::Equal
+            } else if a.transaction_kind == "buy" {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        })
     });
 
     let mut quantity = 0.0;
@@ -408,17 +448,30 @@ async fn compute_open_position_state(
     Ok((quantity, cost_basis_ars))
 }
 
-async fn would_break_position_sequence(pool: &SqlitePool, entry: &InvestmentEntry) -> Result<bool, String> {
+async fn would_break_position_sequence(
+    pool: &SqlitePool,
+    entry: &InvestmentEntry,
+) -> Result<bool, String> {
     let mut relevant = list_investments(pool, &entry.profile_id)
         .await?
         .into_iter()
-        .filter(|item| investment_key(item.ticker.as_deref(), &item.name) == investment_key(entry.ticker.as_deref(), &entry.name) && item.id != entry.id)
+        .filter(|item| {
+            investment_key(item.ticker.as_deref(), &item.name)
+                == investment_key(entry.ticker.as_deref(), &entry.name)
+                && item.id != entry.id
+        })
         .collect::<Vec<_>>();
 
     relevant.sort_by(|a, b| {
-        a.transaction_date
-            .cmp(&b.transaction_date)
-            .then_with(|| if a.transaction_kind == b.transaction_kind { std::cmp::Ordering::Equal } else if a.transaction_kind == "buy" { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater })
+        a.transaction_date.cmp(&b.transaction_date).then_with(|| {
+            if a.transaction_kind == b.transaction_kind {
+                std::cmp::Ordering::Equal
+            } else if a.transaction_kind == "buy" {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        })
     });
 
     let mut quantity = 0.0_f64;
@@ -453,16 +506,28 @@ fn compute_cash_amount_ars(
         "plazo_fijo" => price,
         "fci" => qty * price,
         "bono" => {
-            if ccl > 0.0 { qty * (price / 100.0) * ccl } else { 0.0 }
+            if ccl > 0.0 {
+                qty * (price / 100.0) * ccl
+            } else {
+                0.0
+            }
         }
         "crypto" => {
-            if ccl > 0.0 { qty * price * ccl } else { 0.0 }
+            if ccl > 0.0 {
+                qty * price * ccl
+            } else {
+                0.0
+            }
         }
         "otro" => price.max(current_value.unwrap_or(0.0)).max(amount_invested),
         _ => qty * price,
     };
 
-    if result > 0.0 { Some(round2(result)) } else { None }
+    if result > 0.0 {
+        Some(round2(result))
+    } else {
+        None
+    }
 }
 
 fn investment_key(ticker: Option<&str>, name: &str) -> String {

@@ -100,7 +100,7 @@ export function SignalsWidget({ onRegister }: SignalsWidgetProps) {
           ) : isOffline ? (
             <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-muted)", fontSize: "13px", padding: "12px 0" }}>
               <AlertCircle size={14} />
-              <span>No se encontró la base de datos de Inversiones AR. Verificá que la app esté instalada en <code style={{ fontSize: "11px" }}>E:/Proyectos/Inversiones</code></span>
+              <span>No se pudo conectar con Inversiones AR. Revisá la base de datos o la URL configurada y volvé a intentar.</span>
             </div>
           ) : signals.length === 0 ? (
             <div style={{ textAlign: "center", padding: "16px", color: "var(--text-muted)", fontSize: "13px" }}>

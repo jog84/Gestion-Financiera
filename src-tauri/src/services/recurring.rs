@@ -192,10 +192,26 @@ pub async fn apply_due_recurring(
     let now = Utc::now().to_rfc3339();
     let mut applied = Vec::new();
 
-    for (id, kind, account_id, source_id, category_id, amount, description, vendor, payment_method, notes, frequency, day_of_month) in due {
+    for (
+        id,
+        kind,
+        account_id,
+        source_id,
+        category_id,
+        amount,
+        description,
+        vendor,
+        payment_method,
+        notes,
+        frequency,
+        day_of_month,
+    ) in due
+    {
         let period_id = get_or_create_period(pool, profile_id, reference_date).await?;
         let entry_id = Uuid::new_v4().to_string();
-        let desc = description.clone().unwrap_or_else(|| "Transacción recurrente".to_string());
+        let desc = description
+            .clone()
+            .unwrap_or_else(|| "Transacción recurrente".to_string());
 
         if kind == "income" {
             sqlx::query(
@@ -251,14 +267,20 @@ pub async fn apply_due_recurring(
         .await
         .map_err(|e| e.to_string())?;
 
-        applied.push(AppliedRecurring { id, description: desc, amount, kind });
+        applied.push(AppliedRecurring {
+            id,
+            description: desc,
+            amount,
+            kind,
+        });
     }
 
     Ok(applied)
 }
 
 fn advance_date(date: &str, frequency: &str, day_of_month: Option<i64>) -> String {
-    let parsed = NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap_or_else(|_| Utc::now().date_naive());
+    let parsed =
+        NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap_or_else(|_| Utc::now().date_naive());
     let next = match frequency {
         "weekly" => parsed + Duration::weeks(1),
         "biweekly" => parsed + Duration::weeks(2),
@@ -269,7 +291,11 @@ fn advance_date(date: &str, frequency: &str, day_of_month: Option<i64>) -> Strin
         _ => {
             let total_months = parsed.month() as i32;
             let new_month = (total_months % 12) + 1;
-            let new_year = if new_month == 1 { parsed.year() + 1 } else { parsed.year() };
+            let new_year = if new_month == 1 {
+                parsed.year() + 1
+            } else {
+                parsed.year()
+            };
             let day = day_of_month.unwrap_or(parsed.day() as i64) as u32;
             let max_day = days_in_month(new_year, new_month as u32);
             NaiveDate::from_ymd_opt(new_year, new_month as u32, day.min(max_day)).unwrap_or(parsed)
@@ -282,7 +308,13 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 => if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 29 } else { 28 },
+        2 => {
+            if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
+                29
+            } else {
+                28
+            }
+        }
         _ => 30,
     }
 }

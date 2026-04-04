@@ -98,10 +98,7 @@ pub async fn deactivate_all_themes(
 }
 
 #[tauri::command]
-pub async fn delete_theme(
-    pool: tauri::State<'_, SqlitePool>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_theme(pool: tauri::State<'_, SqlitePool>, id: String) -> Result<(), String> {
     sqlx::query("DELETE FROM custom_themes WHERE id = ?")
         .bind(&id)
         .execute(pool.inner())

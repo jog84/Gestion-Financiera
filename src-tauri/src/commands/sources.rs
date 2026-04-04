@@ -4,8 +4,8 @@ use crate::services::sources::{
     create_expense_category as create_expense_category_entry,
     create_income_source as create_income_source_entry,
     delete_expense_category as delete_expense_category_entry,
-    delete_income_source as delete_income_source_entry,
-    list_expense_categories, list_income_sources, update_expense_category as update_expense_category_entry,
+    delete_income_source as delete_income_source_entry, list_expense_categories,
+    list_income_sources, update_expense_category as update_expense_category_entry,
     update_income_source as update_income_source_entry, ExpenseCategory, IncomeSource,
 };
 

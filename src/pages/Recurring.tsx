@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import { QK } from "@/lib/queryKeys";
+import { invalidateRecurringState } from "@/lib/queryInvalidation";
 import { useProfile } from "@/app/providers/ProfileProvider";
 
 const FREQUENCY_OPTIONS = [
@@ -90,13 +91,6 @@ export function Recurring() {
   const categoryOptions = categories.map((c) => ({ value: c.id, label: c.name }));
   const accountOptions = accounts.map((a) => ({ value: a.id, label: `${a.name}${a.institution ? ` · ${a.institution}` : ""}` }));
 
-  const invalidateFinancialState = () => {
-    qc.invalidateQueries({ queryKey: QK.recurring(profileId) });
-    qc.invalidateQueries({ queryKey: QK.financialAccounts(profileId) });
-    qc.invalidateQueries({ queryKey: QK.cashOverview(profileId) });
-    qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, new Date().getFullYear(), new Date().getMonth() + 1) });
-  };
-
   const openNew = () => {
     setEditItem(null);
     setForm(emptyForm);
@@ -142,7 +136,7 @@ export function Recurring() {
         next_due_date: form.next_due_date,
       }),
     onSuccess: () => {
-      invalidateFinancialState();
+      void invalidateRecurringState(qc, profileId);
       setModalOpen(false);
       setForm(emptyForm);
       toast.success("Transacción recurrente creada");
@@ -168,7 +162,7 @@ export function Recurring() {
         next_due_date: form.next_due_date,
       }),
     onSuccess: () => {
-      invalidateFinancialState();
+      void invalidateRecurringState(qc, profileId);
       setModalOpen(false);
       setEditItem(null);
       toast.success("Transacción recurrente actualizada");
@@ -179,7 +173,7 @@ export function Recurring() {
   const deleteMutation = useMutation({
     mutationFn: deleteRecurringTransaction,
     onSuccess: () => {
-      invalidateFinancialState();
+      void invalidateRecurringState(qc, profileId);
       setDeleteId(null);
       toast.success("Transacción recurrente eliminada");
     },
@@ -187,16 +181,15 @@ export function Recurring() {
 
   const toggleMutation = useMutation({
     mutationFn: toggleRecurringActive,
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.recurring(profileId) }),
+    onSuccess: () => { void invalidateRecurringState(qc, profileId); },
   });
 
   const applyMutation = useMutation({
     mutationFn: () => applyDueRecurring(profileId, new Date().toISOString().split("T")[0]),
     onSuccess: (applied) => {
-      invalidateFinancialState();
-      qc.invalidateQueries({ queryKey: ["incomes"] });
-      qc.invalidateQueries({ queryKey: ["expenses"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      void invalidateRecurringState(qc, profileId);
+      qc.invalidateQueries({ queryKey: QK.incomesPrefix(profileId) });
+      qc.invalidateQueries({ queryKey: QK.expensesPrefix(profileId) });
       if (applied.length === 0) {
         toast.info("No hay transacciones vencidas para aplicar");
       } else {

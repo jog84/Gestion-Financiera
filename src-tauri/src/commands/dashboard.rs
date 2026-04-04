@@ -4,12 +4,9 @@ use crate::services::analytics::{
     check_financial_alerts as run_financial_alert_checks,
     get_dashboard_summary as load_dashboard_summary,
     get_financial_insights as load_financial_insights,
-    get_financial_recommendations as load_financial_recommendations,
     get_financial_overview as load_financial_overview,
-    DashboardSummary,
-    FinancialInsight,
-    FinancialRecommendation,
-    FinancialOverview,
+    get_financial_recommendations as load_financial_recommendations, DashboardSummary,
+    FinancialInsight, FinancialOverview, FinancialRecommendation,
 };
 
 #[tauri::command]

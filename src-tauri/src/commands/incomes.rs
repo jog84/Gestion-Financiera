@@ -1,9 +1,8 @@
 use sqlx::SqlitePool;
 
 use crate::services::cashflow::{
-    create_income as create_income_entry, delete_income as delete_income_entry,
-    list_incomes, update_income as update_income_entry, CreateIncomePayload, IncomeEntry,
-    UpdateIncomePayload,
+    create_income as create_income_entry, delete_income as delete_income_entry, list_incomes,
+    update_income as update_income_entry, CreateIncomePayload, IncomeEntry, UpdateIncomePayload,
 };
 
 #[tauri::command]

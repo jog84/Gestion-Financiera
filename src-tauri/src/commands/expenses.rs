@@ -1,8 +1,8 @@
 use sqlx::SqlitePool;
 
 use crate::services::cashflow::{
-    create_expense as create_expense_entry, delete_expense as delete_expense_entry,
-    list_expenses, update_expense as update_expense_entry, CreateExpensePayload, ExpenseEntry,
+    create_expense as create_expense_entry, delete_expense as delete_expense_entry, list_expenses,
+    update_expense as update_expense_entry, CreateExpensePayload, ExpenseEntry,
     UpdateExpensePayload,
 };
 

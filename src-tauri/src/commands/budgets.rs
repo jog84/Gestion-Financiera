@@ -53,7 +53,11 @@ pub async fn get_budgets(
         .await
         .map_err(|e| e.to_string())?;
 
-        let pct_used = if budget_amount > 0.0 { (spent_amount / budget_amount) * 100.0 } else { 0.0 };
+        let pct_used = if budget_amount > 0.0 {
+            (spent_amount / budget_amount) * 100.0
+        } else {
+            0.0
+        };
 
         result.push(CategoryBudget {
             id,
@@ -110,14 +114,13 @@ pub async fn upsert_budget(
     .await
     .map_err(|e| e.to_string())?;
 
-    let category_name: Option<String> = sqlx::query_scalar(
-        "SELECT name FROM expense_categories WHERE id = ?",
-    )
-    .bind(&category_id)
-    .fetch_optional(pool.inner())
-    .await
-    .map_err(|e| e.to_string())?
-    .flatten();
+    let category_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM expense_categories WHERE id = ?")
+            .bind(&category_id)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?
+            .flatten();
 
     let (spent_amount,): (f64,) = sqlx::query_as(
         r#"SELECT COALESCE(SUM(ee.amount), 0.0)
@@ -133,7 +136,11 @@ pub async fn upsert_budget(
     .await
     .map_err(|e| e.to_string())?;
 
-    let pct_used = if budget_amount > 0.0 { (spent_amount / budget_amount) * 100.0 } else { 0.0 };
+    let pct_used = if budget_amount > 0.0 {
+        (spent_amount / budget_amount) * 100.0
+    } else {
+        0.0
+    };
 
     Ok(CategoryBudget {
         id: actual_id,
@@ -149,10 +156,7 @@ pub async fn upsert_budget(
 }
 
 #[tauri::command]
-pub async fn delete_budget(
-    pool: tauri::State<'_, SqlitePool>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_budget(pool: tauri::State<'_, SqlitePool>, id: String) -> Result<(), String> {
     sqlx::query("DELETE FROM category_budgets WHERE id = ?")
         .bind(&id)
         .execute(pool.inner())

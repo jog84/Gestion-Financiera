@@ -15,6 +15,7 @@ import { exportExpensesTemplate, importExpenses } from "@/lib/excel";
 import { toast } from "sonner";
 import { useLocation, useNavigate } from "react-router-dom";
 import { QK } from "@/lib/queryKeys";
+import { invalidateExpenseState } from "@/lib/queryInvalidation";
 import { useProfile } from "@/app/providers/ProfileProvider";
 import { CashflowTableCard } from "@/components/cashflow/CashflowTableCard";
 import { CashflowEmptyState } from "@/components/cashflow/CashflowEmptyState";
@@ -108,15 +109,6 @@ export function Expenses() {
   const total = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
   const paged = filteredExpenses.slice(page * pageSize, (page + 1) * pageSize);
 
-  const invalidateFinancialState = () => {
-    qc.invalidateQueries({ queryKey: QK.expenses(profileId, year, month) });
-    qc.invalidateQueries({ queryKey: QK.dashboard(profileId, year, month) });
-    qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, year, month) });
-    qc.invalidateQueries({ queryKey: QK.financialAccounts(profileId) });
-    qc.invalidateQueries({ queryKey: QK.cashOverview(profileId) });
-    qc.invalidateQueries({ queryKey: QK.budgets(profileId, year, month) });
-  };
-
   const addMutation = useMutation({
     mutationFn: () =>
       createExpense({
@@ -131,7 +123,7 @@ export function Expenses() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      invalidateFinancialState();
+      void invalidateExpenseState(qc, profileId);
       setModalOpen(false);
       setForm({ amount: "", transaction_date: new Date().toISOString().split("T")[0], account_id: "", category_id: "", description: "", vendor: "", payment_method: "", notes: "" });
       toast.success("Gasto registrado correctamente");
@@ -142,7 +134,7 @@ export function Expenses() {
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateExpense>[1] }) =>
       updateExpense(id, payload),
     onSuccess: () => {
-      invalidateFinancialState();
+      void invalidateExpenseState(qc, profileId);
       toast.success("Gasto actualizado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -151,7 +143,7 @@ export function Expenses() {
   const deleteMutation = useMutation({
     mutationFn: deleteExpense,
     onSuccess: () => {
-      invalidateFinancialState();
+      void invalidateExpenseState(qc, profileId);
       setDeleteId(null);
       toast.success("Gasto eliminado");
     },
@@ -172,7 +164,7 @@ export function Expenses() {
         await createExpense({ profile_id: profileId, amount: r.amount, transaction_date: r.transaction_date, description: r.description || undefined, vendor: r.vendor || undefined, payment_method: r.payment_method || undefined, notes: r.notes || undefined });
         ok++;
       }
-      invalidateFinancialState();
+      void invalidateExpenseState(qc, profileId);
       toast.success(`${ok} gasto(s) importado(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");

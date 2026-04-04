@@ -26,6 +26,7 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import { QK } from "@/lib/queryKeys";
+import { invalidateCashState, invalidateDashboardState } from "@/lib/queryInvalidation";
 import { useProfile } from "@/app/providers/ProfileProvider";
 
 const ACCOUNT_TYPES = [
@@ -118,12 +119,10 @@ export function Accounts() {
   });
 
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: QK.financialAccounts(profileId) });
-    qc.invalidateQueries({ queryKey: QK.cashOverview(profileId) });
-    qc.invalidateQueries({ queryKey: QK.financialTransfers(profileId, 20) });
-    qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, new Date().getFullYear(), new Date().getMonth() + 1) });
-    qc.invalidateQueries({ queryKey: ["account_ledger", profileId] });
-    qc.invalidateQueries({ queryKey: ["account_balance_history", profileId] });
+    void Promise.all([
+      invalidateCashState(qc, profileId),
+      invalidateDashboardState(qc, profileId),
+    ]);
   };
 
   const addMutation = useMutation({

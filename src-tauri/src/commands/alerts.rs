@@ -77,10 +77,7 @@ pub async fn create_alert(
 }
 
 #[tauri::command]
-pub async fn mark_alert_read(
-    pool: tauri::State<'_, SqlitePool>,
-    id: String,
-) -> Result<(), String> {
+pub async fn mark_alert_read(pool: tauri::State<'_, SqlitePool>, id: String) -> Result<(), String> {
     sqlx::query("UPDATE alerts SET is_read = 1 WHERE id = ?")
         .bind(&id)
         .execute(pool.inner())
@@ -103,10 +100,7 @@ pub async fn mark_all_alerts_read(
 }
 
 #[tauri::command]
-pub async fn delete_alert(
-    pool: tauri::State<'_, SqlitePool>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_alert(pool: tauri::State<'_, SqlitePool>, id: String) -> Result<(), String> {
     sqlx::query("DELETE FROM alerts WHERE id = ?")
         .bind(&id)
         .execute(pool.inner())
@@ -155,7 +149,11 @@ pub async fn check_budget_alerts(
         .await
         .map_err(|e| e.to_string())?;
 
-        let pct = if budget_amount > 0.0 { spent / budget_amount * 100.0 } else { 0.0 };
+        let pct = if budget_amount > 0.0 {
+            spent / budget_amount * 100.0
+        } else {
+            0.0
+        };
         let cat_label = category_name.as_deref().unwrap_or("Sin categoría");
 
         let kind = if pct >= 100.0 {
@@ -185,12 +183,20 @@ pub async fn check_budget_alerts(
         let (title, body) = if kind == "budget_exceeded" {
             (
                 format!("Presupuesto excedido: {}", cat_label),
-                format!("Gastaste ${:.0} de un presupuesto de ${:.0} ({:.0}%)", spent, budget_amount, pct),
+                format!(
+                    "Gastaste ${:.0} de un presupuesto de ${:.0} ({:.0}%)",
+                    spent, budget_amount, pct
+                ),
             )
         } else {
             (
                 format!("Presupuesto al {:.0}%: {}", pct, cat_label),
-                format!("Gastaste ${:.0} de ${:.0} — quedan ${:.0}", spent, budget_amount, budget_amount - spent),
+                format!(
+                    "Gastaste ${:.0} de ${:.0} — quedan ${:.0}",
+                    spent,
+                    budget_amount,
+                    budget_amount - spent
+                ),
             )
         };
 

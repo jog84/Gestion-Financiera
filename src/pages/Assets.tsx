@@ -17,6 +17,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { exportAssetsTemplate, importAssets } from "@/lib/excel";
 import { toast } from "sonner";
 import { QK } from "@/lib/queryKeys";
+import { invalidateAssetState } from "@/lib/queryInvalidation";
 import { useProfile } from "@/app/providers/ProfileProvider";
 
 const CAT_COLORS = ["#4361ee","#06d6a0","#fb8500","#ef233c","#4cc9f0","#a855f7","#f59e0b","#e91e63"];
@@ -102,8 +103,7 @@ export function Assets() {
         notes: form.notes || undefined,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.assets(profileId) });
-      qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, currentYear, currentMonth) });
+      void invalidateAssetState(qc, profileId);
       setModalOpen(false);
       setForm({ name: "", category: "", value: "", snapshot_date: new Date().toISOString().split("T")[0], notes: "" });
       toast.success("Activo registrado correctamente");
@@ -114,8 +114,7 @@ export function Assets() {
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof updateAsset>[1] }) =>
       updateAsset(id, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.assets(profileId) });
-      qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, currentYear, currentMonth) });
+      void invalidateAssetState(qc, profileId);
       toast.success("Activo actualizado");
     },
     onError: (e: unknown) => toast.error(String(e)),
@@ -124,8 +123,7 @@ export function Assets() {
   const deleteMutation = useMutation({
     mutationFn: deleteAsset,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.assets(profileId) });
-      qc.invalidateQueries({ queryKey: QK.financialOverview(profileId, currentYear, currentMonth) });
+      void invalidateAssetState(qc, profileId);
       setDeleteId(null);
       toast.success("Activo eliminado");
     },
@@ -153,7 +151,7 @@ export function Assets() {
         await createAsset({ profile_id: profileId, name: r.name, category: r.category || undefined, value: r.value, snapshot_date: r.snapshot_date, notes: r.notes || undefined });
         ok++;
       }
-      qc.invalidateQueries({ queryKey: QK.assets(profileId) });
+      void invalidateAssetState(qc, profileId);
       toast.success(`${ok} activo(s) importado(s) correctamente`);
     } catch {
       toast.error("Error al importar el archivo. Verificá que el formato sea el correcto.");

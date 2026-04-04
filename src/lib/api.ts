@@ -422,6 +422,42 @@ export const getDefaultProfile = () => invoke<ProfileSettings>("get_default_prof
 export const updateProfileSettings = (name: string, currencyCode: string, locale: string) =>
   invoke<ProfileSettings>("update_profile", { name, currencyCode, locale });
 
+export interface InversionesIntegrationSettings {
+  db_path: string | null;
+  api_url: string | null;
+  resolved_db_path: string | null;
+  resolved_api_url: string;
+  candidate_db_paths: string[];
+}
+
+export interface InversionesIntegrationTestResult {
+  db_ok: boolean;
+  api_ok: boolean;
+  resolved_db_path: string | null;
+  resolved_api_url: string;
+  db_message: string;
+  api_message: string;
+  active_signals: number | null;
+  instruments: number | null;
+  api_status_code: number | null;
+  candidate_db_paths: string[];
+}
+
+export const getInversionesIntegrationSettings = () =>
+  invoke<InversionesIntegrationSettings>("get_inversiones_integration_settings");
+
+export const saveInversionesIntegrationSettings = (dbPath?: string | null, apiUrl?: string | null) =>
+  invoke<InversionesIntegrationSettings>("save_inversiones_integration_settings", { dbPath: dbPath ?? null, apiUrl: apiUrl ?? null });
+
+export const resetInversionesIntegrationSettings = () =>
+  invoke<InversionesIntegrationSettings>("reset_inversiones_integration_settings");
+
+export const autodetectInversionesIntegration = () =>
+  invoke<InversionesIntegrationSettings>("autodetect_inversiones_integration");
+
+export const testInversionesIntegration = (dbPath?: string | null, apiUrl?: string | null) =>
+  invoke<InversionesIntegrationTestResult>("test_inversiones_integration", { dbPath: dbPath ?? null, apiUrl: apiUrl ?? null });
+
 // ── Prices (Yahoo Finance) ────────────────────────────────────────────────────
 
 export interface PriceResult { ticker: string; price_ars: number; currency: string; market_state: string; }
@@ -437,6 +473,18 @@ export const getDbLocation = () => invoke<string>("get_db_location");
 export const setDbLocation = (path: string) => invoke<void>("set_db_location", { path });
 export const resetDbLocation = () => invoke<void>("reset_db_location");
 export const copyDbToLocation = (path: string) => invoke<void>("copy_db_to_location", { path });
+
+export interface DbBackupInfo {
+  file_name: string;
+  full_path: string;
+  created_at: string;
+  size_bytes: number;
+  kind: "auto" | "manual";
+}
+
+export const getDbBackupDirectory = () => invoke<string>("get_db_backup_directory");
+export const listDbBackups = () => invoke<DbBackupInfo[]>("list_db_backups");
+export const createDbBackup = () => invoke<DbBackupInfo>("create_db_backup");
 
 // ── Inversiones AR integration ────────────────────────────────────────────────
 

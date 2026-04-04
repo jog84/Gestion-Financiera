@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, CheckCircle, FolderOpen, AlertTriangle, RotateCcw, Copy, Plus, Trash2, Palette } from "lucide-react";
+import { Save, CheckCircle, FolderOpen, AlertTriangle, RotateCcw, Copy, Plus, Trash2, Palette, Database, Link2, RefreshCw, Wifi, WifiOff, Shield } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -10,9 +10,15 @@ import { getDashboardMode, setDashboardMode, type DashboardMode } from "@/lib/da
 import {
   getDefaultProfile, updateProfileSettings,
   getDbLocation, setDbLocation, resetDbLocation, copyDbToLocation,
+  getDbBackupDirectory, listDbBackups, createDbBackup,
+  getInversionesIntegrationSettings, saveInversionesIntegrationSettings,
+  resetInversionesIntegrationSettings, autodetectInversionesIntegration, testInversionesIntegration,
   getExpenseCategories, createExpenseCategory, updateExpenseCategory, deleteExpenseCategory,
   getIncomeSources, createIncomeSource, updateIncomeSource, deleteIncomeSource,
   getThemes, createTheme, activateTheme, deactivateAllThemes, deleteTheme,
+  type DbBackupInfo,
+  type InversionesIntegrationSettings as InversionesIntegrationSettingsType,
+  type InversionesIntegrationTestResult,
 } from "@/lib/api";
 import { toast } from "sonner";
 import { QK } from "@/lib/queryKeys";
@@ -78,6 +84,9 @@ export function Settings() {
   // DB location state
   const [folderInput, setFolderInput] = useState("");
   const [dbRestartNeeded, setDbRestartNeeded] = useState(false);
+  const [integrationSaved, setIntegrationSaved] = useState(false);
+  const [integrationForm, setIntegrationForm] = useState({ dbPath: "", apiUrl: "" });
+  const [integrationTest, setIntegrationTest] = useState<InversionesIntegrationTestResult | null>(null);
 
   // Category/Source add forms
   const [newCatName, setNewCatName] = useState("");
@@ -103,6 +112,19 @@ export function Settings() {
   const { data: currentDbPath, refetch: refetchDbPath } = useQuery({
     queryKey: QK.dbLocation(),
     queryFn: getDbLocation,
+  });
+  const { data: backupDirectory } = useQuery({
+    queryKey: QK.dbBackupDirectory(),
+    queryFn: getDbBackupDirectory,
+  });
+  const { data: backups = [], refetch: refetchBackups } = useQuery({
+    queryKey: QK.dbBackups(),
+    queryFn: listDbBackups,
+  });
+
+  const { data: integrationSettings, refetch: refetchIntegrationSettings } = useQuery({
+    queryKey: QK.inversionesIntegration(),
+    queryFn: getInversionesIntegrationSettings,
   });
 
   const { data: categories = [] } = useQuery({
@@ -130,6 +152,15 @@ export function Settings() {
       setFolderInput(folder);
     }
   }, [currentDbPath]);
+
+  useEffect(() => {
+    if (integrationSettings) {
+      setIntegrationForm({
+        dbPath: integrationSettings.db_path ?? "",
+        apiUrl: integrationSettings.api_url ?? "",
+      });
+    }
+  }, [integrationSettings]);
 
   const saveMutation = useMutation({
     mutationFn: () => updateProfileSettings(form.name, form.currency_code, form.locale),
@@ -171,6 +202,93 @@ export function Settings() {
       refetchDbPath();
       setDbRestartNeeded(true);
       toast.success("Ruta restablecida. Reiniciá la app.");
+    },
+    onError: (e: unknown) => toast.error(String(e)),
+  });
+
+  const createBackupMutation = useMutation({
+    mutationFn: createDbBackup,
+    onSuccess: async () => {
+      qc.invalidateQueries({ queryKey: QK.dbBackups() });
+      await refetchBackups();
+      toast.success("Backup generado");
+    },
+    onError: (e: unknown) => toast.error(String(e)),
+  });
+
+  const invalidateInversionesQueries = () => {
+    qc.invalidateQueries({ queryKey: ["inversiones-signals"] });
+    qc.invalidateQueries({ queryKey: ["inversiones-search"] });
+    qc.invalidateQueries({ queryKey: ["ticker-analysis"] });
+  };
+
+  const setIntegrationFormFromSettings = (settings: InversionesIntegrationSettingsType) => {
+    setIntegrationForm({
+      dbPath: settings.db_path ?? "",
+      apiUrl: settings.api_url ?? "",
+    });
+  };
+
+  const testIntegrationMutation = useMutation({
+    mutationFn: ({ dbPath, apiUrl }: { dbPath?: string | null; apiUrl?: string | null }) =>
+      testInversionesIntegration(dbPath ?? null, apiUrl ?? null),
+    onSuccess: (result) => {
+      setIntegrationTest(result);
+      if (result.db_ok && result.api_ok) {
+        toast.success("Integración con Inversiones AR operativa");
+      } else if (result.db_ok || result.api_ok) {
+        toast.error("La integración respondió en forma parcial. Revisá el detalle.");
+      } else {
+        toast.error("No se pudo validar la integración con Inversiones AR.");
+      }
+    },
+    onError: (e: unknown) => {
+      toast.error(String(e));
+    },
+  });
+
+  const saveIntegrationMutation = useMutation({
+    mutationFn: ({ dbPath, apiUrl }: { dbPath?: string | null; apiUrl?: string | null }) =>
+      saveInversionesIntegrationSettings(dbPath ?? null, apiUrl ?? null),
+    onSuccess: async (settings) => {
+      qc.invalidateQueries({ queryKey: QK.inversionesIntegration() });
+      invalidateInversionesQueries();
+      await refetchIntegrationSettings();
+      setIntegrationFormFromSettings(settings);
+      setIntegrationTest(null);
+      setIntegrationSaved(true);
+      setTimeout(() => setIntegrationSaved(false), 2500);
+      toast.success("Integración guardada");
+    },
+    onError: (e: unknown) => toast.error(String(e)),
+  });
+
+  const resetIntegrationMutation = useMutation({
+    mutationFn: resetInversionesIntegrationSettings,
+    onSuccess: async (settings) => {
+      qc.invalidateQueries({ queryKey: QK.inversionesIntegration() });
+      invalidateInversionesQueries();
+      await refetchIntegrationSettings();
+      setIntegrationFormFromSettings(settings);
+      setIntegrationTest(null);
+      toast.success("Integración restablecida");
+    },
+    onError: (e: unknown) => toast.error(String(e)),
+  });
+
+  const autodetectIntegrationMutation = useMutation({
+    mutationFn: autodetectInversionesIntegration,
+    onSuccess: async (settings) => {
+      qc.invalidateQueries({ queryKey: QK.inversionesIntegration() });
+      invalidateInversionesQueries();
+      await refetchIntegrationSettings();
+      setIntegrationFormFromSettings(settings);
+      setIntegrationTest(null);
+      toast.success("Autodetección completada");
+      testIntegrationMutation.mutate({
+        dbPath: settings.db_path ?? null,
+        apiUrl: settings.api_url ?? null,
+      });
     },
     onError: (e: unknown) => toast.error(String(e)),
   });
@@ -274,6 +392,19 @@ export function Settings() {
 
   const pathChanged = dbPathInput.trim() !== "" && dbPathInput !== currentDbPath;
   const activeTheme = themes.find((t) => t.is_active);
+  const savedIntegrationDbPath = integrationSettings?.db_path ?? "";
+  const savedIntegrationApiUrl = integrationSettings?.api_url ?? "";
+  const normalizedIntegrationDbPath = integrationForm.dbPath.trim();
+  const normalizedIntegrationApiUrl = integrationForm.apiUrl.trim().replace(/[\\/]+$/, "").replace(/\/+$/, "");
+  const integrationChanged =
+    normalizedIntegrationDbPath !== savedIntegrationDbPath ||
+    normalizedIntegrationApiUrl !== savedIntegrationApiUrl;
+  const runningIntegrationCheck =
+    testIntegrationMutation.isPending ||
+    saveIntegrationMutation.isPending ||
+    resetIntegrationMutation.isPending ||
+    autodetectIntegrationMutation.isPending;
+  const latestBackup = backups[0] ?? null;
 
   const rowStyle: React.CSSProperties = {
     display: "flex",
@@ -281,6 +412,19 @@ export function Settings() {
     gap: "8px",
     padding: "6px 0",
     borderBottom: "1px solid var(--border)",
+  };
+
+  const formatBackupSize = (bytes: number) => {
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const formatBackupDate = (value: string) => {
+    try {
+      return new Date(value).toLocaleString("es-AR");
+    } catch {
+      return value;
+    }
   };
 
   return (
@@ -684,6 +828,353 @@ export function Settings() {
               Reiniciá la aplicación para que los cambios tomen efecto.
             </div>
           )}
+        </div>
+      </Card>
+
+      <Card className="animate-fade-in-up delay-325" style={{ padding: "20px" }}>
+        <CardHeader>
+          <CardTitle style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Shield size={16} />
+            Backups automáticos
+          </CardTitle>
+        </CardHeader>
+
+        <div style={{
+          background: "color-mix(in srgb, var(--success) 8%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--success) 25%, transparent)",
+          borderRadius: "8px",
+          padding: "12px 14px",
+          fontSize: "12px",
+          color: "var(--text-2)",
+          lineHeight: 1.7,
+          marginBottom: "16px",
+        }}>
+          La app guarda un <strong style={{ color: "var(--text)" }}>backup automático diario</strong> de la base activa en una carpeta local segura, aunque trabajes con una base en Drive.
+          Se conservan las últimas <strong style={{ color: "var(--text)" }}>14 copias automáticas</strong> y <strong style={{ color: "var(--text)" }}>10 manuales</strong>.
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div style={{
+            borderRadius: "8px",
+            border: "1px solid var(--border)",
+            background: "var(--surface-2)",
+            padding: "10px 12px",
+          }}>
+            <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px", fontWeight: 600 }}>
+              Carpeta de backups
+            </div>
+            <div style={{ fontSize: "11px", color: "var(--text-2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>
+              {backupDirectory ?? "Cargando..."}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+            <Button onClick={() => createBackupMutation.mutate()} disabled={createBackupMutation.isPending}>
+              <Save size={13} />
+              {createBackupMutation.isPending ? "Generando..." : "Crear backup ahora"}
+            </Button>
+            {latestBackup && (
+              <span style={{ fontSize: "12px", color: "var(--text-2)" }}>
+                Último backup: <strong>{formatBackupDate(latestBackup.created_at)}</strong>
+              </span>
+            )}
+          </div>
+
+          {backups.length === 0 ? (
+            <div style={{
+              borderRadius: "8px",
+              border: "1px dashed var(--border)",
+              padding: "12px 14px",
+              fontSize: "12px",
+              color: "var(--text-3)",
+              background: "var(--surface-2)",
+            }}>
+              Todavía no hay backups listados. El primero se crea automáticamente al abrir la app o manualmente desde este botón.
+            </div>
+          ) : (
+            <div style={{
+              borderRadius: "8px",
+              border: "1px solid var(--border)",
+              background: "var(--surface-2)",
+              overflow: "hidden",
+            }}>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {backups.slice(0, 6).map((backup: DbBackupInfo) => (
+                  <div
+                    key={backup.full_path}
+                    style={{
+                      padding: "10px 12px",
+                      borderBottom: "1px solid var(--border)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "5px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+                      <div style={{ fontSize: "12px", color: "var(--text)", fontWeight: 600 }}>
+                        {backup.file_name}
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{
+                          fontSize: "10px",
+                          padding: "2px 7px",
+                          borderRadius: "999px",
+                          background: backup.kind === "auto"
+                            ? "color-mix(in srgb, var(--primary) 14%, transparent)"
+                            : "color-mix(in srgb, var(--warning) 16%, transparent)",
+                          color: backup.kind === "auto" ? "var(--primary)" : "var(--warning)",
+                          fontWeight: 600,
+                        }}>
+                          {backup.kind === "auto" ? "Auto" : "Manual"}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "var(--text-3)" }}>{formatBackupSize(backup.size_bytes)}</span>
+                        <span style={{ fontSize: "11px", color: "var(--text-3)" }}>{formatBackupDate(backup.created_at)}</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--text-2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>
+                      {backup.full_path}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p style={{ fontSize: "11px", color: "var(--text-3)", margin: 0, lineHeight: 1.6 }}>
+            Si la base compartida de Drive se corrompe, estas copias locales quedan fuera de esa carpeta y te sirven como punto de recuperación.
+          </p>
+        </div>
+      </Card>
+
+      <Card className="animate-fade-in-up delay-350" style={{ padding: "20px" }}>
+        <CardHeader>
+          <CardTitle style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Link2 size={16} />
+            Integración con Inversiones AR
+          </CardTitle>
+        </CardHeader>
+
+        <div style={{
+          background: "color-mix(in srgb, var(--primary) 8%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--primary) 25%, transparent)",
+          borderRadius: "8px",
+          padding: "12px 14px",
+          fontSize: "12px",
+          color: "var(--text-2)",
+          lineHeight: 1.7,
+          marginBottom: "16px",
+        }}>
+          La app puede leer señales desde la base SQLite de <strong style={{ color: "var(--text)" }}>Inversiones AR</strong> y usar su API para agregar tickers nuevos.
+          Si dejás estos campos vacíos, <strong style={{ color: "var(--text)" }}>Finanzas</strong> intenta autodetectar la instalación local.
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <Input
+            label="Base SQLite de Inversiones AR"
+            value={integrationForm.dbPath}
+            onChange={(e) => setIntegrationForm((current) => ({ ...current, dbPath: e.target.value }))}
+            placeholder="Ej: C:\\Users\\TuUsuario\\AppData\\Roaming\\Inversiones\\data\\inversiones.db"
+          />
+
+          <Input
+            label="URL de la API de Inversiones AR"
+            value={integrationForm.apiUrl}
+            onChange={(e) => setIntegrationForm((current) => ({ ...current, apiUrl: e.target.value }))}
+            placeholder="Ej: http://localhost:3001"
+          />
+
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "10px",
+          }}>
+            <div style={{
+              borderRadius: "8px",
+              border: "1px solid var(--border)",
+              background: "var(--surface-2)",
+              padding: "10px 12px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                <Database size={13} color="var(--primary)" />
+                <span style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
+                  Base resuelta
+                </span>
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--text-2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>
+                {integrationSettings?.resolved_db_path ?? "Sin detectar todavía"}
+              </div>
+            </div>
+
+            <div style={{
+              borderRadius: "8px",
+              border: "1px solid var(--border)",
+              background: "var(--surface-2)",
+              padding: "10px 12px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                <Wifi size={13} color="var(--primary)" />
+                <span style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
+                  API resuelta
+                </span>
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--text-2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>
+                {integrationSettings?.resolved_api_url ?? "http://localhost:3001"}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <Button
+              variant="outline"
+              onClick={() => autodetectIntegrationMutation.mutate()}
+              disabled={runningIntegrationCheck}
+            >
+              <RefreshCw size={13} />
+              {autodetectIntegrationMutation.isPending ? "Detectando..." : "Autodetectar"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => testIntegrationMutation.mutate({
+                dbPath: normalizedIntegrationDbPath || null,
+                apiUrl: normalizedIntegrationApiUrl || null,
+              })}
+              disabled={runningIntegrationCheck}
+            >
+              {testIntegrationMutation.isPending ? "Probando..." : "Probar conexión"}
+            </Button>
+            <Button
+              onClick={() => saveIntegrationMutation.mutate({
+                dbPath: normalizedIntegrationDbPath || null,
+                apiUrl: normalizedIntegrationApiUrl || null,
+              })}
+              disabled={!integrationChanged || runningIntegrationCheck}
+            >
+              <Save size={13} />
+              {saveIntegrationMutation.isPending ? "Guardando..." : "Guardar integración"}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => resetIntegrationMutation.mutate()}
+              disabled={runningIntegrationCheck}
+              style={{ color: "var(--text-3)" }}
+            >
+              <RotateCcw size={13} />
+              Restablecer
+            </Button>
+            {integrationSaved && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "12px", color: "var(--success)" }}>
+                <CheckCircle size={13} />
+                Guardado
+              </span>
+            )}
+          </div>
+
+          {integrationTest && (
+            <div style={{
+              borderRadius: "10px",
+              border: "1px solid var(--border)",
+              background: "var(--surface-2)",
+              padding: "12px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <span style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "4px 9px",
+                  borderRadius: "999px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  background: integrationTest.db_ok ? "color-mix(in srgb, var(--success) 16%, transparent)" : "color-mix(in srgb, var(--danger) 14%, transparent)",
+                  color: integrationTest.db_ok ? "var(--success)" : "var(--danger)",
+                }}>
+                  {integrationTest.db_ok ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
+                  Base {integrationTest.db_ok ? "OK" : "fallando"}
+                </span>
+                <span style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "4px 9px",
+                  borderRadius: "999px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  background: integrationTest.api_ok ? "color-mix(in srgb, var(--success) 16%, transparent)" : "color-mix(in srgb, var(--danger) 14%, transparent)",
+                  color: integrationTest.api_ok ? "var(--success)" : "var(--danger)",
+                }}>
+                  {integrationTest.api_ok ? <Wifi size={12} /> : <WifiOff size={12} />}
+                  API {integrationTest.api_ok ? "OK" : "fallando"}
+                </span>
+                {integrationTest.instruments != null && (
+                  <span style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                    Instrumentos: <strong style={{ color: "var(--text)" }}>{integrationTest.instruments}</strong>
+                  </span>
+                )}
+                {integrationTest.active_signals != null && (
+                  <span style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                    Señales activas: <strong style={{ color: "var(--text)" }}>{integrationTest.active_signals}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div style={{ fontSize: "12px", color: "var(--text-2)", lineHeight: 1.6 }}>
+                <div><strong style={{ color: "var(--text)" }}>Base:</strong> {integrationTest.db_message}</div>
+                <div><strong style={{ color: "var(--text)" }}>API:</strong> {integrationTest.api_message}</div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "10px" }}>
+                <div style={{
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  padding: "10px 12px",
+                }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px", fontWeight: 600 }}>
+                    Ruta evaluada
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>
+                    {integrationTest.resolved_db_path ?? "Sin resolver"}
+                  </div>
+                </div>
+                <div style={{
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  padding: "10px 12px",
+                }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px", fontWeight: 600 }}>
+                    URL evaluada
+                  </div>
+                  <div style={{ fontSize: "11px", color: "var(--text-2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>
+                    {integrationTest.resolved_api_url}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {integrationSettings?.candidate_db_paths?.length ? (
+            <div style={{
+              borderRadius: "8px",
+              border: "1px dashed var(--border)",
+              padding: "10px 12px",
+              background: "var(--surface-2)",
+            }}>
+              <div style={{ fontSize: "11px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px", fontWeight: 600 }}>
+                Rutas candidatas detectadas
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "140px", overflowY: "auto" }}>
+                {integrationSettings.candidate_db_paths.slice(0, 8).map((candidate) => (
+                  <div key={candidate} style={{ fontSize: "11px", color: "var(--text-2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>
+                    {candidate}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </Card>
     </div>

@@ -69,7 +69,10 @@ pub async fn set_db_location(app: tauri::AppHandle, path: String) -> Result<(), 
 
     // Cannot be an existing directory
     if p.is_dir() {
-        return Err("La ruta apunta a una carpeta. Incluí el nombre del archivo (ej: \\finanzas.db)".to_string());
+        return Err(
+            "La ruta apunta a una carpeta. Incluí el nombre del archivo (ej: \\finanzas.db)"
+                .to_string(),
+        );
     }
 
     // Parent directory must exist
@@ -99,4 +102,24 @@ pub async fn copy_db_to_location(
         .await
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_db_backup_directory(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(crate::db::backup_dir(&app)?.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn list_db_backups(
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::db::DbBackupInfo>, String> {
+    crate::db::list_db_backups(&app)
+}
+
+#[tauri::command]
+pub async fn create_db_backup(
+    pool: tauri::State<'_, SqlitePool>,
+    app: tauri::AppHandle,
+) -> Result<crate::db::DbBackupInfo, String> {
+    crate::db::create_db_backup(pool.inner(), &app, "manual").await
 }

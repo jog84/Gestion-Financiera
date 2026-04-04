@@ -166,13 +166,12 @@ pub async fn update_financial_account(
     payload: UpdateFinancialAccountPayload,
 ) -> Result<FinancialAccount, String> {
     let now = Utc::now().to_rfc3339();
-    let previous: (String, f64) = sqlx::query_as(
-        "SELECT profile_id, current_balance FROM financial_accounts WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let previous: (String, f64) =
+        sqlx::query_as("SELECT profile_id, current_balance FROM financial_accounts WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     sqlx::query(
@@ -222,7 +221,10 @@ pub async fn delete_financial_account(pool: &SqlitePool, id: &str) -> Result<(),
     Ok(())
 }
 
-pub async fn get_cash_overview(pool: &SqlitePool, profile_id: &str) -> Result<CashOverview, String> {
+pub async fn get_cash_overview(
+    pool: &SqlitePool,
+    profile_id: &str,
+) -> Result<CashOverview, String> {
     let (total_balance, liquid_balance, account_count, liquid_account_count): (f64, f64, i64, i64) = sqlx::query_as(
         "SELECT
             COALESCE(SUM(CASE WHEN include_in_net_worth = 1 THEN current_balance ELSE 0 END), 0.0),
@@ -360,73 +362,96 @@ pub async fn list_account_ledger(
     .await
     .map_err(|e| e.to_string())?;
 
-    let mut entries: Vec<AccountLedgerEntry> = incomes
-        .into_iter()
-        .map(|(id, amount, entry_date, description, origin)| AccountLedgerEntry {
-            id,
-            account_id: account_id.to_string(),
-            account_name: account_name.clone(),
-            entry_type: "income".to_string(),
-            direction: "in".to_string(),
-            amount,
-            entry_date,
-            description,
-            counterparty: None,
-            origin,
-        })
-        .chain(expenses.into_iter().map(|(id, amount, entry_date, description, origin)| AccountLedgerEntry {
-            id,
-            account_id: account_id.to_string(),
-            account_name: account_name.clone(),
-            entry_type: "expense".to_string(),
-            direction: "out".to_string(),
-            amount,
-            entry_date,
-            description,
-            counterparty: None,
-            origin,
-        }))
-        .chain(outgoing.into_iter().map(|(id, amount, entry_date, description, counterparty)| AccountLedgerEntry {
-            id,
-            account_id: account_id.to_string(),
-            account_name: account_name.clone(),
-            entry_type: "transfer".to_string(),
-            direction: "out".to_string(),
-            amount,
-            entry_date,
-            description,
-            counterparty,
-            origin: Some("transfer".to_string()),
-        }))
-        .chain(incoming.into_iter().map(|(id, amount, entry_date, description, counterparty)| AccountLedgerEntry {
-            id,
-            account_id: account_id.to_string(),
-            account_name: account_name.clone(),
-            entry_type: "transfer".to_string(),
-            direction: "in".to_string(),
-            amount,
-            entry_date,
-            description,
-            counterparty,
-            origin: Some("transfer".to_string()),
-        }))
-        .chain(adjustments.into_iter().map(|(id, amount, entry_date, _notes, reason)| AccountLedgerEntry {
-            id,
-            account_id: account_id.to_string(),
-            account_name: account_name.clone(),
-            entry_type: "adjustment".to_string(),
-            direction: if amount >= 0.0 { "in".to_string() } else { "out".to_string() },
-            amount: amount.abs(),
-            entry_date,
-            description: Some(match reason.as_str() {
-                "opening_balance" => "Saldo inicial".to_string(),
-                "manual_adjustment" => "Ajuste manual".to_string(),
-                _ => "Ajuste".to_string(),
-            }),
-            counterparty: None,
-            origin: Some(reason),
-        }))
-        .collect();
+    let mut entries: Vec<AccountLedgerEntry> =
+        incomes
+            .into_iter()
+            .map(
+                |(id, amount, entry_date, description, origin)| AccountLedgerEntry {
+                    id,
+                    account_id: account_id.to_string(),
+                    account_name: account_name.clone(),
+                    entry_type: "income".to_string(),
+                    direction: "in".to_string(),
+                    amount,
+                    entry_date,
+                    description,
+                    counterparty: None,
+                    origin,
+                },
+            )
+            .chain(
+                expenses
+                    .into_iter()
+                    .map(
+                        |(id, amount, entry_date, description, origin)| AccountLedgerEntry {
+                            id,
+                            account_id: account_id.to_string(),
+                            account_name: account_name.clone(),
+                            entry_type: "expense".to_string(),
+                            direction: "out".to_string(),
+                            amount,
+                            entry_date,
+                            description,
+                            counterparty: None,
+                            origin,
+                        },
+                    ),
+            )
+            .chain(outgoing.into_iter().map(
+                |(id, amount, entry_date, description, counterparty)| AccountLedgerEntry {
+                    id,
+                    account_id: account_id.to_string(),
+                    account_name: account_name.clone(),
+                    entry_type: "transfer".to_string(),
+                    direction: "out".to_string(),
+                    amount,
+                    entry_date,
+                    description,
+                    counterparty,
+                    origin: Some("transfer".to_string()),
+                },
+            ))
+            .chain(incoming.into_iter().map(
+                |(id, amount, entry_date, description, counterparty)| AccountLedgerEntry {
+                    id,
+                    account_id: account_id.to_string(),
+                    account_name: account_name.clone(),
+                    entry_type: "transfer".to_string(),
+                    direction: "in".to_string(),
+                    amount,
+                    entry_date,
+                    description,
+                    counterparty,
+                    origin: Some("transfer".to_string()),
+                },
+            ))
+            .chain(
+                adjustments
+                    .into_iter()
+                    .map(
+                        |(id, amount, entry_date, _notes, reason)| AccountLedgerEntry {
+                            id,
+                            account_id: account_id.to_string(),
+                            account_name: account_name.clone(),
+                            entry_type: "adjustment".to_string(),
+                            direction: if amount >= 0.0 {
+                                "in".to_string()
+                            } else {
+                                "out".to_string()
+                            },
+                            amount: amount.abs(),
+                            entry_date,
+                            description: Some(match reason.as_str() {
+                                "opening_balance" => "Saldo inicial".to_string(),
+                                "manual_adjustment" => "Ajuste manual".to_string(),
+                                _ => "Ajuste".to_string(),
+                            }),
+                            counterparty: None,
+                            origin: Some(reason),
+                        },
+                    ),
+            )
+            .collect();
 
     entries.sort_by(|a, b| {
         b.entry_date
@@ -592,11 +617,16 @@ pub async fn create_financial_transfer(
     }
 
     if from_account.2 != to_account.2 {
-        return Err("Por ahora solo se permiten transferencias entre cuentas de la misma moneda".to_string());
+        return Err(
+            "Por ahora solo se permiten transferencias entre cuentas de la misma moneda"
+                .to_string(),
+        );
     }
 
     if from_account.3 < payload.amount {
-        return Err("La cuenta origen no tiene saldo suficiente para esta transferencia".to_string());
+        return Err(
+            "La cuenta origen no tiene saldo suficiente para esta transferencia".to_string(),
+        );
     }
 
     let id = Uuid::new_v4().to_string();

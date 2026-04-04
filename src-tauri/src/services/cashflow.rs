@@ -4,7 +4,9 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::services::accounts::apply_account_balance_delta;
-use crate::services::periods::{get_or_create_period, get_profile_id_for_record, ProfileOwnedTable};
+use crate::services::periods::{
+    get_or_create_period, get_profile_id_for_record, ProfileOwnedTable,
+};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct IncomeEntry {
@@ -142,7 +144,8 @@ pub async fn create_income(
 ) -> Result<IncomeEntry, String> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
-    let period_id = get_or_create_period(pool, &payload.profile_id, &payload.transaction_date).await?;
+    let period_id =
+        get_or_create_period(pool, &payload.profile_id, &payload.transaction_date).await?;
 
     sqlx::query(
         "INSERT INTO income_entries (id, profile_id, period_id, account_id, source_id, amount, transaction_date, description, notes, origin, created_at, updated_at)
@@ -176,13 +179,12 @@ pub async fn update_income(
     let now = Utc::now().to_rfc3339();
     let profile_id = get_profile_id_for_record(pool, ProfileOwnedTable::IncomeEntries, id).await?;
     let period_id = get_or_create_period(pool, &profile_id, &payload.transaction_date).await?;
-    let previous: (Option<String>, f64) = sqlx::query_as(
-        "SELECT account_id, amount FROM income_entries WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let previous: (Option<String>, f64) =
+        sqlx::query_as("SELECT account_id, amount FROM income_entries WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
     sqlx::query(
         "UPDATE income_entries SET account_id = ?, source_id = ?, amount = ?, transaction_date = ?, description = ?, notes = ?, period_id = ?, updated_at = ? WHERE id = ?",
@@ -207,13 +209,12 @@ pub async fn update_income(
 }
 
 pub async fn delete_income(pool: &SqlitePool, id: &str) -> Result<(), String> {
-    let previous: (Option<String>, f64) = sqlx::query_as(
-        "SELECT account_id, amount FROM income_entries WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let previous: (Option<String>, f64) =
+        sqlx::query_as("SELECT account_id, amount FROM income_entries WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM income_entries WHERE id = ?")
         .bind(id)
@@ -260,7 +261,8 @@ pub async fn create_expense(
 ) -> Result<ExpenseEntry, String> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
-    let period_id = get_or_create_period(pool, &payload.profile_id, &payload.transaction_date).await?;
+    let period_id =
+        get_or_create_period(pool, &payload.profile_id, &payload.transaction_date).await?;
 
     sqlx::query(
         "INSERT INTO expense_entries (id, profile_id, period_id, account_id, category_id, amount, transaction_date, description, vendor, payment_method, notes, is_installment_derived, origin, created_at, updated_at)
@@ -296,13 +298,12 @@ pub async fn update_expense(
     let now = Utc::now().to_rfc3339();
     let profile_id = get_profile_id_for_record(pool, ProfileOwnedTable::ExpenseEntries, id).await?;
     let period_id = get_or_create_period(pool, &profile_id, &payload.transaction_date).await?;
-    let previous: (Option<String>, f64) = sqlx::query_as(
-        "SELECT account_id, amount FROM expense_entries WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let previous: (Option<String>, f64) =
+        sqlx::query_as("SELECT account_id, amount FROM expense_entries WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
     sqlx::query(
         "UPDATE expense_entries SET account_id = ?, category_id = ?, amount = ?, transaction_date = ?, description = ?, vendor = ?, payment_method = ?, notes = ?, period_id = ?, updated_at = ? WHERE id = ?",
@@ -329,13 +330,12 @@ pub async fn update_expense(
 }
 
 pub async fn delete_expense(pool: &SqlitePool, id: &str) -> Result<(), String> {
-    let previous: (Option<String>, f64) = sqlx::query_as(
-        "SELECT account_id, amount FROM expense_entries WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let previous: (Option<String>, f64) =
+        sqlx::query_as("SELECT account_id, amount FROM expense_entries WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM expense_entries WHERE id = ?")
         .bind(id)

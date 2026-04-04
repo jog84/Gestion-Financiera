@@ -7,27 +7,34 @@ type ProfileContextValue = {
   profileId: string;
   profile: ProfileSettings | undefined;
   isLoading: boolean;
+  error: string | null;
+  isReady: boolean;
 };
 
 const ProfileContext = createContext<ProfileContextValue>({
-  profileId: "default",
+  profileId: "",
   profile: undefined,
   isLoading: true,
+  error: null,
+  isReady: false,
 });
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
-  const { data: profile, isLoading } = useQuery({
+  const { data: profile, isLoading, error } = useQuery({
     queryKey: QK.defaultProfile(),
     queryFn: getDefaultProfile,
     staleTime: 60_000,
+    retry: 1,
   });
 
   return (
     <ProfileContext.Provider
       value={{
-        profileId: profile?.id ?? "default",
+        profileId: profile?.id ?? "",
         profile,
         isLoading,
+        error: error ? String(error) : null,
+        isReady: !!profile?.id && !isLoading,
       }}
     >
       {children}

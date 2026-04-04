@@ -44,7 +44,13 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 => if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 29 } else { 28 },
+        2 => {
+            if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
+                29
+            } else {
+                28
+            }
+        }
         _ => 30,
     }
 }
@@ -110,7 +116,12 @@ pub async fn create_installment(
         let date_str = expense_date.format("%Y-%m-%d").to_string();
         let period_id = get_or_create_period(pool.inner(), &payload.profile_id, &date_str).await?;
         let expense_id = Uuid::new_v4().to_string();
-        let description = format!("{} (cuota {}/{})", payload.description, i + 1, payload.installment_count);
+        let description = format!(
+            "{} (cuota {}/{})",
+            payload.description,
+            i + 1,
+            payload.installment_count
+        );
 
         sqlx::query(
             "INSERT INTO expense_entries (id, profile_id, period_id, account_id, amount, transaction_date, description, is_installment_derived, origin, external_ref, created_at, updated_at)
@@ -131,7 +142,12 @@ pub async fn create_installment(
         .map_err(|e| e.to_string())?;
 
         if expense_date <= today {
-            apply_account_balance_delta(pool.inner(), payload.account_id.as_deref(), -monthly_amount).await?;
+            apply_account_balance_delta(
+                pool.inner(),
+                payload.account_id.as_deref(),
+                -monthly_amount,
+            )
+            .await?;
         }
     }
 
@@ -166,11 +182,13 @@ pub async fn delete_installment(
     .await
     .map_err(|e| e.to_string())?;
 
-    sqlx::query("DELETE FROM expense_entries WHERE external_ref = ? AND is_installment_derived = 1")
-        .bind(&id)
-        .execute(pool.inner())
-        .await
-        .map_err(|e| e.to_string())?;
+    sqlx::query(
+        "DELETE FROM expense_entries WHERE external_ref = ? AND is_installment_derived = 1",
+    )
+    .bind(&id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
 
     let today = Utc::now().date_naive();
     for (account_id, amount, transaction_date) in derived_entries {

@@ -29,8 +29,10 @@ tokio = { version = "1.50.0", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
 rfd = "0.15"
 base64 = "0.22"
+futures = "0.3"
+calamine = { version = "0.34.0", features = ["dates"] }
+rust_xlsxwriter = { version = "0.94.0", features = ["chrono"] }
 
 [profile.release]
 opt-level = 1
 codegen-units = 1
-

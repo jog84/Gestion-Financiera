@@ -1,9 +1,8 @@
 use sqlx::SqlitePool;
 
 use crate::services::assets::{
-    create_asset as create_asset_snapshot, delete_asset as delete_asset_snapshot,
-    list_assets, update_asset as update_asset_snapshot, AssetSnapshot, CreateAssetPayload,
-    UpdateAssetPayload,
+    create_asset as create_asset_snapshot, delete_asset as delete_asset_snapshot, list_assets,
+    update_asset as update_asset_snapshot, AssetSnapshot, CreateAssetPayload, UpdateAssetPayload,
 };
 
 #[tauri::command]
@@ -23,10 +22,7 @@ pub async fn create_asset(
 }
 
 #[tauri::command]
-pub async fn delete_asset(
-    pool: tauri::State<'_, SqlitePool>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_asset(pool: tauri::State<'_, SqlitePool>, id: String) -> Result<(), String> {
     delete_asset_snapshot(pool.inner(), &id).await
 }
 

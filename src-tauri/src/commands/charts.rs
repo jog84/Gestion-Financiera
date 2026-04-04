@@ -26,7 +26,7 @@ pub struct InstallmentCashflowPoint {
 }
 
 const MONTH_NAMES: [&str; 12] = [
-    "Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic",
+    "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
 ];
 
 #[tauri::command]
@@ -65,7 +65,12 @@ pub async fn get_monthly_summary(
         .await
         .map_err(|e| e.to_string())?;
 
-        result.push(MonthlySummary { year, month, total_income, total_expenses });
+        result.push(MonthlySummary {
+            year,
+            month,
+            total_income,
+            total_expenses,
+        });
     }
 
     result.reverse();
@@ -122,7 +127,8 @@ pub async fn get_installment_cashflow(
     let start_month = now.month() as i64;
 
     // Build a map of year-month -> (total, count)
-    let mut monthly: std::collections::HashMap<(i64, i64), (f64, i64)> = std::collections::HashMap::new();
+    let mut monthly: std::collections::HashMap<(i64, i64), (f64, i64)> =
+        std::collections::HashMap::new();
 
     for (_id, total_amount, installment_count, start_date_str) in installments {
         let start = match NaiveDate::parse_from_str(&start_date_str, "%Y-%m-%d") {
@@ -155,9 +161,16 @@ pub async fn get_installment_cashflow(
         let total_offset = (start_month - 1) + i;
         let year = start_year as i64 + total_offset / 12;
         let month = (total_offset % 12) + 1;
-        let (total_due, installment_count) = monthly.get(&(year, month)).copied().unwrap_or((0.0, 0));
+        let (total_due, installment_count) =
+            monthly.get(&(year, month)).copied().unwrap_or((0.0, 0));
         let month_label = format!("{}/{}", MONTH_NAMES[(month - 1) as usize], year % 100);
-        result.push(InstallmentCashflowPoint { year, month, month_label, total_due, installment_count });
+        result.push(InstallmentCashflowPoint {
+            year,
+            month,
+            month_label,
+            total_due,
+            installment_count,
+        });
     }
 
     Ok(result)

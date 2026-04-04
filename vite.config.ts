@@ -40,13 +40,19 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-react":  ["react", "react-dom", "react-router-dom"],
-          "vendor-query":  ["@tanstack/react-query"],
-          "vendor-charts": ["recharts"],
-          "vendor-icons":  ["lucide-react"],
-          "vendor-ui":     ["sonner", "class-variance-authority", "clsx", "tailwind-merge"],
-          "vendor-xlsx":   ["xlsx"],
+        manualChunks(id) {
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom") || id.includes("node_modules/react-router-dom")) return "vendor-react";
+          if (id.includes("node_modules/@tanstack/react-query")) return "vendor-query";
+          if (id.includes("node_modules/recharts")) return "vendor-charts";
+          if (id.includes("node_modules/lucide-react")) return "vendor-icons";
+          if (
+            id.includes("node_modules/sonner")
+            || id.includes("node_modules/class-variance-authority")
+            || id.includes("node_modules/clsx")
+            || id.includes("node_modules/tailwind-merge")
+          ) {
+            return "vendor-ui";
+          }
         },
       },
     },

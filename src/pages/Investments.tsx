@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BarChart2, Briefcase, Download, DollarSign, Plus, RefreshCw, Target, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useProfile } from "@/app/providers/ProfileProvider";
 import { AllocationCharts } from "@/components/investments/AllocationCharts";
-import { generateSmartInsights, calcCAGR, calcRow, calcXIRR, type CashFlow } from "@/lib/investmentCalcs";
 import { InsightsPanel } from "@/components/investments/InsightsPanel";
 import { InvestmentFormModal } from "@/components/investments/InvestmentFormModal";
 import { PortfolioChart } from "@/components/investments/PortfolioChart";
@@ -20,13 +19,10 @@ import { Card } from "@/components/ui/Card";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import {
-  buildPositions,
   createEmptyInvestmentForm,
   fNum,
   investmentsTabStyle,
   p,
-  sortPositions,
-  sortTransactions,
   type Currency,
   type InvestmentFormState,
   type SortDir,
@@ -38,18 +34,15 @@ import {
   deleteInvestment,
   fetchCcl,
   fetchPrices,
-  getDashboardSummary,
-  getCashOverview,
-  getFinancialAccounts,
-  getInvestments,
-  getPortfolioSnapshots,
   savePortfolioSnapshot,
   updateInvestmentValue,
   updatePricesByTicker,
   type InversionesSignal,
 } from "@/lib/api";
 import { exportInvestmentsTemplate, importInvestments } from "@/lib/excel";
-import { INVALIDATE, QK } from "@/lib/queryKeys";
+import { invalidateInvestmentState } from "@/lib/queryInvalidation";
+import { buildInvestmentsViewModel, applyPriceUpdatesToInvestments } from "@/domains/investments/viewModel";
+import { useInvestmentsDashboard } from "@/domains/investments/useInvestmentsDashboard";
 import type { InstrumentType, InvestmentEntry } from "@/types";
 
 type InvestmentsTab = "resumen" | "transacciones" | "analisis";
@@ -68,11 +61,6 @@ export function Investments() {
   const [sectorFilter, setSectorFilter] = useState<string | null>(null);
   const [sortCol, setSortCol] = useState<SortKey | null>("actual");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [currentCcl, setCurrentCcl] = useState<number | null>(() => {
-    const stored = parseFloat(localStorage.getItem("last_ccl") ?? "");
-    return isFinite(stored) && stored > 0 ? stored : null;
-  });
-  const [cclStale, setCclStale] = useState(true);
   const [instrType, setInstrType] = useState<InstrumentType>("cedear");
   const [expandedPos, setExpandedPos] = useState<string | null>(null);
   const [tickerDetection, setTickerDetection] = useState<TickerDetection | null>(null);
@@ -82,41 +70,56 @@ export function Investments() {
   const [transactionKind, setTransactionKind] = useState<"buy" | "sell">("buy");
   const [analysisTicker, setAnalysisTicker] = useState<string | null>(null);
 
-  const { data: investments = [], isLoading } = useQuery({
-    queryKey: QK.investments(profileId),
-    queryFn: () => getInvestments(profileId),
-  });
+  const {
+    accounts,
+    cashOverview,
+    currentCcl,
+    cclStale,
+    dashSummary,
+    investments,
+    isLoading,
+    setCurrentCcl,
+    setCclStale,
+    snapshots,
+  } = useInvestmentsDashboard(profileId);
 
-  const { data: accounts = [] } = useQuery({
-    queryKey: QK.financialAccounts(profileId),
-    queryFn: () => getFinancialAccounts(profileId),
-  });
-
-  const { data: cashOverview } = useQuery({
-    queryKey: QK.cashOverview(profileId),
-    queryFn: () => getCashOverview(profileId),
-  });
-
-  const { data: snapshots = [] } = useQuery({
-    queryKey: QK.portfolioSnapshots(profileId),
-    queryFn: () => getPortfolioSnapshots(profileId),
-  });
-
-  const { data: dashSummary } = useQuery({
-    queryKey: QK.dashboard(profileId, new Date().getFullYear(), new Date().getMonth() + 1),
-    queryFn: () => getDashboardSummary(profileId, new Date().getFullYear(), new Date().getMonth() + 1),
-    staleTime: 60_000,
-  });
-
-  useEffect(() => {
-    fetchCcl()
-      .then((ccl) => {
-        setCurrentCcl(ccl);
-        setCclStale(false);
-        localStorage.setItem("last_ccl", String(ccl));
-      })
-      .catch(() => {});
-  }, []);
+  const {
+    positions,
+    realizedGains,
+    cagr,
+    xirr,
+    insights,
+    chartData,
+    filteredPositions,
+    filteredTransactions,
+    dispInv,
+    dispAct,
+    sym,
+    portfolioReturnPctUsd,
+    accountOptions,
+  } = useMemo(() => buildInvestmentsViewModel({
+    investments,
+    accounts,
+    cashOverview,
+    dashSummary,
+    currentCcl,
+    currency,
+    filterText,
+    sectorFilter,
+    sortCol,
+    sortDir,
+  }), [
+    accounts,
+    cashOverview,
+    currency,
+    currentCcl,
+    dashSummary,
+    filterText,
+    investments,
+    sectorFilter,
+    sortCol,
+    sortDir,
+  ]);
 
   const handleSort = (column: SortKey) => {
     if (sortCol === column) setSortDir((dir) => dir === "asc" ? "desc" : "asc");
@@ -148,123 +151,6 @@ export function Investments() {
     }));
     setModalOpen(true);
   };
-
-  const positions = useMemo(
-    () => buildPositions(investments, currentCcl),
-    [investments, currentCcl],
-  );
-
-  const totals = useMemo(() => positions.reduce((acc, position) => ({
-    invertidoArs: acc.invertidoArs + position.invertidoArs,
-    actualArs: acc.actualArs + position.actualArs,
-    invertidoUsd: acc.invertidoUsd + position.invertidoUsd,
-    actualUsd: acc.actualUsd + position.actualUsd,
-  }), { invertidoArs: 0, actualArs: 0, invertidoUsd: 0, actualUsd: 0 }), [positions]);
-
-  const realizedGains = useMemo(() => investments.reduce((acc, investment) => {
-    if (investment.transaction_kind !== "sell") return acc;
-    const row = calcRow(investment, currentCcl);
-    return {
-      ars: acc.ars + row.gananciaArs,
-      usd: acc.usd + row.gananciaUsd,
-    };
-  }, { ars: 0, usd: 0 }), [investments, currentCcl]);
-
-  const { cagr, xirr } = useMemo(() => {
-    if (investments.length === 0) return { cagr: 0, xirr: null };
-
-    const sorted = [...investments].filter((investment) => investment.transaction_kind === "buy").sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime());
-    const cashFlows: CashFlow[] = investments.map((investment) => {
-      const row = calcRow(investment, currentCcl);
-      return {
-        date: new Date(investment.transaction_date),
-        amount: investment.transaction_kind === "sell" ? row.actualArs : -row.invertidoArs,
-      };
-    });
-    cashFlows.push({ date: new Date(), amount: totals.actualArs });
-    cashFlows.sort((a, b) => a.date.getTime() - b.date.getTime());
-
-    return {
-      cagr: calcCAGR(totals.invertidoArs, totals.actualArs, new Date(sorted[0].transaction_date)),
-      xirr: calcXIRR(cashFlows),
-    };
-  }, [investments, totals, currentCcl]);
-
-  const insights = useMemo(() => generateSmartInsights(
-    positions.map((position) => ({
-      key: position.key,
-      type: position.type,
-      sector: position.sector,
-      currentValue: position.actualArs,
-      totalInvested: position.invertidoArs,
-      returnPct: position.invertidoArs > 0 ? position.gananciaArs / position.invertidoArs : 0,
-      count: position.count,
-      ppp: position.ppp,
-      maturityDate: position.maturityDate,
-    })),
-    totals.actualArs,
-    dashSummary?.balance ?? 0,
-  ), [positions, totals.actualArs, dashSummary]);
-
-  const chartData = useMemo(() => {
-    if (investments.length === 0) return [];
-    const sorted = [...investments].sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime());
-    const groups = new Map<string, InvestmentEntry[]>();
-
-    for (const investment of sorted) {
-      const date = investment.transaction_date.slice(0, 10);
-      if (!groups.has(date)) groups.set(date, []);
-      groups.get(date)!.push(investment);
-    }
-
-    let cumulative = 0;
-    const points: Array<{ date: string; invested: number; portfolio: number }> = [];
-    const isArs = currency === "ARS";
-
-    for (const [date, group] of groups) {
-      for (const investment of group) {
-        const row = calcRow(investment, currentCcl);
-        cumulative += investment.transaction_kind === "sell"
-          ? -(isArs ? row.actualArs : row.actualUsd)
-          : (isArs ? row.invertidoArs : row.invertidoUsd);
-      }
-      points.push({ date, invested: cumulative, portfolio: cumulative });
-    }
-
-    if (points.length > 0) {
-      points[points.length - 1].portfolio = isArs ? totals.actualArs : totals.actualUsd;
-    }
-
-    return points;
-  }, [investments, currency, currentCcl, totals.actualArs, totals.actualUsd]);
-
-  const dispInv = currency === "ARS" ? totals.invertidoArs : totals.invertidoUsd;
-  const dispAct = currency === "ARS" ? totals.actualArs : totals.actualUsd;
-  const sym = currency === "ARS" ? "$" : "USD ";
-  const portfolioReturnPctUsd = currentCcl && totals.invertidoUsd > 0
-    ? ((totals.actualUsd - totals.invertidoUsd) / totals.invertidoUsd) * 100
-    : undefined;
-
-  const filteredPositions = useMemo(() => {
-    let list = positions;
-    if (filterText) {
-      const q = filterText.toLowerCase();
-      list = list.filter((position) => position.key.toLowerCase().includes(q) || position.name.toLowerCase().includes(q));
-    }
-    if (sectorFilter) {
-      list = list.filter((position) => position.sector === sectorFilter);
-    }
-    return sortPositions(list, sortCol, sortDir, currency);
-  }, [positions, filterText, sectorFilter, sortCol, sortDir, currency]);
-
-  const filteredTransactions = useMemo(() => {
-    let list = investments;
-    if (filterText) {
-      const q = filterText.toLowerCase();
-      list = list.filter((investment) => (investment.ticker ?? "").toLowerCase().includes(q) || investment.name.toLowerCase().includes(q));
-    }
-    return sortTransactions(list, sortCol, sortDir, currency, currentCcl);
-  }, [investments, filterText, sortCol, sortDir, currency, currentCcl]);
 
   const addMutation = useMutation({
     mutationFn: () => {
@@ -318,7 +204,7 @@ export function Investments() {
       });
     },
     onSuccess: () => {
-      INVALIDATE.onInvestmentChanged(profileId).forEach((key) => qc.invalidateQueries({ queryKey: key }));
+      void invalidateInvestmentState(qc, profileId);
       setModalOpen(false);
       setForm(createEmptyInvestmentForm());
       setTickerDetection(null);
@@ -331,7 +217,7 @@ export function Investments() {
   const deleteMutation = useMutation({
     mutationFn: deleteInvestment,
     onSuccess: () => {
-      INVALIDATE.onInvestmentChanged(profileId).forEach((key) => qc.invalidateQueries({ queryKey: key }));
+      void invalidateInvestmentState(qc, profileId);
       setDeleteId(null);
       toast.success("Movimiento eliminado");
     },
@@ -351,7 +237,7 @@ export function Investments() {
 
     try {
       await updateInvestmentValue(investment.id, newCurrentValue, newPrice);
-      INVALIDATE.onInvestmentChanged(profileId).forEach((key) => qc.invalidateQueries({ queryKey: key }));
+      void invalidateInvestmentState(qc, profileId);
       toast.success("Precio actualizado");
     } catch (error) {
       toast.error(String(error));
@@ -386,17 +272,29 @@ export function Investments() {
         setCclStale(false);
       }
 
-      qc.invalidateQueries({ queryKey: QK.investments(profileId) });
+      void invalidateInvestmentState(qc, profileId);
       toast.success(`${updated} posición(es) actualizadas · CCL: $${ccl ? fNum(ccl, 0) : "—"}`);
 
       try {
         const snapshotCcl = ccl ?? currentCcl ?? 0;
-        const recomputedPositions = buildPositions(investments, snapshotCcl);
+        const updatedInvestments = applyPriceUpdatesToInvestments(investments, updates, snapshotCcl);
+        const recomputedPositions = buildInvestmentsViewModel({
+          investments: updatedInvestments,
+          accounts,
+          cashOverview,
+          dashSummary,
+          currentCcl: snapshotCcl,
+          currency,
+          filterText: "",
+          sectorFilter: null,
+          sortCol: "actual",
+          sortDir: "desc",
+        }).positions;
         const recalcArs = recomputedPositions.reduce((sum, position) => sum + position.actualArs, 0);
         const recalcUsd = recomputedPositions.reduce((sum, position) => sum + position.actualUsd, 0);
         const recalcInvArs = recomputedPositions.reduce((sum, position) => sum + position.invertidoArs, 0);
         await savePortfolioSnapshot(profileId, recalcArs, recalcUsd, recalcInvArs, snapshotCcl);
-        qc.invalidateQueries({ queryKey: QK.portfolioSnapshots(profileId) });
+        void invalidateInvestmentState(qc, profileId);
       } catch {
         // snapshot non critical
       }
@@ -435,7 +333,7 @@ export function Investments() {
         });
       }
 
-      INVALIDATE.onInvestmentChanged(profileId).forEach((key) => qc.invalidateQueries({ queryKey: key }));
+      void invalidateInvestmentState(qc, profileId);
       toast.success(`${rows.length} inversión(es) importada(s)`);
     } catch {
       toast.error("Error al importar. Verificá el formato.");
@@ -453,11 +351,6 @@ export function Investments() {
     if (instrType === "otro") return !!form.name && !!form.price_ars;
     return !!form.ticker && !!form.quantity && !!form.price_ars && !!form.dolar_ccl;
   };
-
-  const accountOptions = accounts.map((account) => ({
-    value: account.id,
-    label: `${account.name}${account.institution ? ` · ${account.institution}` : ""} · ${account.currency_code}`,
-  }));
 
   return (
     <div style={{ padding: "28px 32px", maxWidth: "1560px" }}>

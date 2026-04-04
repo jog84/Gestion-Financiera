@@ -5,28 +5,60 @@ mod services;
 use tauri::Manager;
 
 use commands::{
-    accounts::{create_financial_account, create_financial_transfer, delete_financial_account, delete_financial_transfer, get_account_balance_history, get_account_ledger, get_cash_overview, get_financial_accounts, get_financial_transfers, update_financial_account},
-    alerts::{get_alerts, create_alert, mark_alert_read, mark_all_alerts_read, delete_alert, check_budget_alerts},
+    accounts::{
+        create_financial_account, create_financial_transfer, delete_financial_account,
+        delete_financial_transfer, get_account_balance_history, get_account_ledger,
+        get_cash_overview, get_financial_accounts, get_financial_transfers,
+        update_financial_account,
+    },
+    alerts::{
+        check_budget_alerts, create_alert, delete_alert, get_alerts, mark_alert_read,
+        mark_all_alerts_read,
+    },
     assets::{create_asset, delete_asset, get_assets, update_asset},
-    budgets::{get_budgets, upsert_budget, delete_budget},
-    charts::{get_expense_breakdown, get_monthly_summary, get_installment_cashflow},
-    dashboard::{check_financial_alerts, get_dashboard_summary, get_financial_insights, get_financial_overview, get_financial_recommendations},
+    budgets::{delete_budget, get_budgets, upsert_budget},
+    charts::{get_expense_breakdown, get_installment_cashflow, get_monthly_summary},
+    dashboard::{
+        check_financial_alerts, get_dashboard_summary, get_financial_insights,
+        get_financial_overview, get_financial_recommendations,
+    },
+    excel::{export_excel_template, import_excel_rows},
     expenses::{create_expense, delete_expense, get_expenses, update_expense},
     goals::{create_goal, delete_goal, get_goals, update_goal_amount, update_goal_status},
     incomes::{create_income, delete_income, get_incomes, update_income},
     installments::{create_installment, delete_installment, get_installments},
-    investments::{create_investment, delete_investment, get_investments, update_investment_value, save_portfolio_snapshot, get_portfolio_snapshots},
-    milestones::{get_milestones, create_milestone, delete_milestone, check_and_mark_milestones},
+    inversiones_integration::{
+        autodetect_inversiones_integration, get_inversiones_integration_settings,
+        reset_inversiones_integration_settings, save_inversiones_integration_settings,
+        test_inversiones_integration,
+    },
+    investments::{
+        create_investment, delete_investment, get_investments, get_portfolio_snapshots,
+        save_portfolio_snapshot, update_investment_value,
+    },
+    milestones::{check_and_mark_milestones, create_milestone, delete_milestone, get_milestones},
     net_worth::{get_net_worth_history, save_net_worth_snapshot},
+    prices::{fetch_ccl, fetch_prices, update_prices_by_ticker},
     profiles::{create_profile, get_profiles},
-    recurring::{get_recurring_transactions, create_recurring_transaction, update_recurring_transaction, delete_recurring_transaction, toggle_recurring_active, apply_due_recurring},
+    recurring::{
+        apply_due_recurring, create_recurring_transaction, delete_recurring_transaction,
+        get_recurring_transactions, toggle_recurring_active, update_recurring_transaction,
+    },
     reports::{get_annual_report, get_recent_transactions, get_yoy_comparison},
-    settings::{get_default_profile, update_profile, get_db_location, set_db_location, reset_db_location, copy_db_to_location},
-    prices::{fetch_prices, fetch_ccl, update_prices_by_ticker},
-    signals::{fetch_inversiones_signals, fetch_ticker_analysis, add_ticker_to_inversiones, search_inversiones_instruments},
-    files::save_excel_file,
-    sources::{create_expense_category, create_income_source, get_expense_categories, get_income_sources, update_income_source, delete_income_source, update_expense_category, delete_expense_category},
-    themes::{get_themes, create_theme, activate_theme, deactivate_all_themes, delete_theme},
+    settings::{
+        copy_db_to_location, create_db_backup, get_db_backup_directory, get_db_location,
+        get_default_profile, list_db_backups, reset_db_location, set_db_location, update_profile,
+    },
+    signals::{
+        add_ticker_to_inversiones, fetch_inversiones_signals, fetch_ticker_analysis,
+        search_inversiones_instruments,
+    },
+    sources::{
+        create_expense_category, create_income_source, delete_expense_category,
+        delete_income_source, get_expense_categories, get_income_sources, update_expense_category,
+        update_income_source,
+    },
+    themes::{activate_theme, create_theme, deactivate_all_themes, delete_theme, get_themes},
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -83,6 +115,8 @@ pub fn run() {
             get_financial_insights,
             get_financial_recommendations,
             check_financial_alerts,
+            export_excel_template,
+            import_excel_rows,
             get_monthly_summary,
             get_expense_breakdown,
             get_installment_cashflow,
@@ -154,6 +188,14 @@ pub fn run() {
             set_db_location,
             reset_db_location,
             copy_db_to_location,
+            get_db_backup_directory,
+            list_db_backups,
+            create_db_backup,
+            get_inversiones_integration_settings,
+            save_inversiones_integration_settings,
+            reset_inversiones_integration_settings,
+            autodetect_inversiones_integration,
+            test_inversiones_integration,
             // Prices
             fetch_prices,
             fetch_ccl,
@@ -169,8 +211,6 @@ pub fn run() {
             activate_theme,
             deactivate_all_themes,
             delete_theme,
-            // Files
-            save_excel_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

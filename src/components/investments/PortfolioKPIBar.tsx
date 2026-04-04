@@ -45,7 +45,6 @@ function KPICard({ label, value, subValue, subLabel, trend, alert, alertLabel, m
 
   return (
     <div style={{
-      flex: 1,
       minWidth: 0,
       background: alert ? "color-mix(in srgb, var(--warning) 8%, var(--surface-1))" : "var(--surface-1)",
       border: `1px solid ${alert ? "color-mix(in srgb, var(--warning) 40%, var(--border))" : "var(--border)"}`,
@@ -92,7 +91,7 @@ export function PortfolioKPIBar({ portfolioValue, totalInvested, cagr, xirr, sym
   const isPos = ganancia >= 0;
 
   return (
-    <div style={{ display: "flex", gap: "12px", marginBottom: "20px" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "20px" }}>
       {/* Patrimonio */}
       <KPICard
         label="Portfolio"
